@@ -4,8 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import "react-native-url-polyfill/auto"; // Required for URL handling in RN
 
 // Use Expo env vars (public keys only!)
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL2!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY2!;
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 // Single exported client instance
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
