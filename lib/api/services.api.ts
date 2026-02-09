@@ -180,3 +180,91 @@ export async function fetchCategories() {
     throw error;
   }
 }
+
+/**
+ * Advanced search and filter services
+ * Supports search query, category, price range, rating, location, and sorting
+ */
+export async function searchAndFilterServices(params: {
+  searchQuery?: string;
+  categoryId?: string | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  minRating?: number | null;
+  location?: string;
+  sortBy?: "newest" | "price_low" | "price_high" | "rating_high";
+}): Promise<ServiceWithDetails[]> {
+  try {
+    let query = supabase
+      .from("services")
+      .select(
+        `
+        *,
+        category:categories(*),
+        profile:profiles(*)
+      `,
+      )
+      .eq("status", "active");
+
+    // Apply search query (title, description, or tags)
+    if (params.searchQuery && params.searchQuery.trim()) {
+      query = query.or(
+        `title.ilike.%${params.searchQuery}%,description.ilike.%${params.searchQuery}%,tags.cs.{${params.searchQuery}}`,
+      );
+    }
+
+    // Filter by category
+    if (params.categoryId) {
+      query = query.eq("category_id", params.categoryId);
+    }
+
+    // Filter by minimum price
+    if (params.minPrice !== null && params.minPrice !== undefined) {
+      query = query.gte("price", params.minPrice);
+    }
+
+    // Filter by maximum price
+    if (params.maxPrice !== null && params.maxPrice !== undefined) {
+      query = query.lte("price", params.maxPrice);
+    }
+
+    // Filter by minimum rating
+    if (params.minRating !== null && params.minRating !== undefined) {
+      query = query.gte("rating", params.minRating);
+    }
+
+    // Filter by location (partial match)
+    if (params.location && params.location.trim()) {
+      query = query.ilike("location", `%${params.location}%`);
+    }
+
+    // Apply sorting
+    switch (params.sortBy) {
+      case "price_low":
+        query = query.order("price", { ascending: true, nullsFirst: false });
+        break;
+      case "price_high":
+        query = query.order("price", { ascending: false, nullsFirst: false });
+        break;
+      case "rating_high":
+        query = query.order("rating", { ascending: false });
+        break;
+      case "newest":
+      default:
+        query = query.order("created_at", { ascending: false });
+        break;
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error searching and filtering services:", error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Failed to search and filter services:", error);
+    throw error;
+  }
+}
