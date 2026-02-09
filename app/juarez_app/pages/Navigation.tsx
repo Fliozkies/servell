@@ -1,9 +1,9 @@
 import {
-  BarChart2,
+  Bell,
   Home,
   MessageSquare,
   Plus,
-  User,
+  User
 } from "lucide-react-native";
 import React from "react";
 import { Platform, Text, TouchableOpacity, View } from "react-native";
@@ -37,11 +37,11 @@ const BottomNav = ({
         />
 
         <NavButton
-          label="Progress"
-          name="Progress"
-          active={currentTab === "Progress"}
-          onPress={() => onTabPress("Progress")}
-          icon={<BarChart2 size={22} />}
+          label="Notification"
+          name="Notification"
+          active={currentTab === "Notification"}
+          onPress={() => onTabPress("Notification")}
+          icon={<Bell size={22} />}
         />
 
         {/* Post Button - Central Action */}
