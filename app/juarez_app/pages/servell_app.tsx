@@ -2,12 +2,12 @@ import { Bell } from "lucide-react-native";
 import { useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Logout from "../../(app)/home";
 import { PageName } from "../../../lib/types/custom.types";
 import ConversationsScreen from "./conversations";
 import CreateService from "./create_service";
 import BottomNav from "./Navigation";
 import ServicesContent from "./services_content";
+import ProfilePage from "./Profile_page";
 
 export default function ServellApp() {
   const [activeTab, setActiveTab] = useState<PageName>("Services");
@@ -60,7 +60,7 @@ export default function ServellApp() {
           />
         )}
 
-        {activeTab === "Profile" && <Logout />}
+        {activeTab === "Profile" && <ProfilePage />}
       </View>
 
       {/* Bottom Navigation - Hide when creating service */}
