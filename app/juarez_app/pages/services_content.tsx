@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import { searchAndFilterServices } from "../../../lib/api/services.api";
 import FilterBottomSheet from "../../../lib/components/FilterBottomSheet";
-import SearchBar from "../../../lib/components/SearchBar";
 import { useDebounce } from "../../../lib/hooks/useDebounce";
 import { ItemProps } from "../../../lib/types/custom.types";
 import { ServiceWithDetails } from "../../../lib/types/database.types";
@@ -107,22 +106,25 @@ const Item = ({
   </TouchableOpacity>
 );
 
-export default function ServicesContent() {
+type ServicesContentProps = {
+  searchQuery: string;
+  filterModalVisible: boolean;
+  onFilterModalClose: () => void;
+  filters: FilterOptions;
+  onFiltersChange: (filters: FilterOptions) => void;
+};
+
+export default function ServicesContent({
+  searchQuery,
+  filterModalVisible,
+  onFilterModalClose,
+  filters,
+  onFiltersChange,
+}: ServicesContentProps) {
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Search and Filter states
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [filters, setFilters] = useState<FilterOptions>({
-    categoryId: null,
-    priceRange: { min: null, max: null },
-    minRating: null,
-    location: "",
-    sortBy: "newest",
-  });
 
   // Debounce search query to avoid excessive API calls
   const debouncedSearchQuery = useDebounce(searchQuery, 400);
@@ -170,22 +172,8 @@ export default function ServicesContent() {
   };
 
   const handleApplyFilters = (newFilters: FilterOptions) => {
-    setFilters(newFilters);
+    onFiltersChange(newFilters);
   };
-
-  // Count active filters
-  const getActiveFilterCount = () => {
-    let count = 0;
-    if (filters.categoryId) count++;
-    if (filters.priceRange.min !== null || filters.priceRange.max !== null)
-      count++;
-    if (filters.minRating) count++;
-    if (filters.location) count++;
-    if (filters.sortBy !== "newest") count++;
-    return count;
-  };
-
-  const activeFilterCount = getActiveFilterCount();
 
   // Loading state
   if (loading && !refreshing) {
@@ -214,42 +202,29 @@ export default function ServicesContent() {
 
   return (
     <View className="flex-1">
-      {/* Search Bar and Filter Button */}
-      <View className="bg-white">
-        <SearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search services..."
-        />
-        <View className="px-4 pb-3">
-          <TouchableOpacity
-            onPress={() => setFilterModalVisible(true)}
-            className="flex-row items-center justify-center py-2 px-4 bg-slate-100 rounded-xl"
-          >
-            <AntDesign name="filter" size={16} color="#64748b" />
-            <Text className="ml-2 text-slate-700 font-medium">Filters</Text>
-            {activeFilterCount > 0 && (
-              <View className="ml-2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center">
-                <Text className="text-white text-xs font-bold">
-                  {activeFilterCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {/* Empty state */}
       {services.length === 0 ? (
         <View className="flex-1 items-center justify-center bg-slate-50 px-8">
           <AntDesign name="inbox" size={64} color="#94a3b8" />
           <Text className="mt-4 text-slate-800 font-semibold text-lg">
-            {searchQuery || activeFilterCount > 0
+            {searchQuery ||
+            filters.categoryId ||
+            filters.priceRange.min !== null ||
+            filters.priceRange.max !== null ||
+            filters.minRating ||
+            filters.location ||
+            filters.sortBy !== "newest"
               ? "No services found"
               : "No Services Yet"}
           </Text>
           <Text className="mt-2 text-slate-600 text-center">
-            {searchQuery || activeFilterCount > 0
+            {searchQuery ||
+            filters.categoryId ||
+            filters.priceRange.min !== null ||
+            filters.priceRange.max !== null ||
+            filters.minRating ||
+            filters.location ||
+            filters.sortBy !== "newest"
               ? "Try adjusting your search or filters"
               : "Be the first to post a service! Tap the + button below to get started."}
           </Text>
@@ -298,7 +273,7 @@ export default function ServicesContent() {
       {/* Filter Bottom Sheet */}
       <FilterBottomSheet
         visible={filterModalVisible}
-        onClose={() => setFilterModalVisible(false)}
+        onClose={onFilterModalClose}
         onApply={handleApplyFilters}
         currentFilters={filters}
       />

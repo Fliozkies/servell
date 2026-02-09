@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   Modal,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -89,7 +90,13 @@ export default function FilterBottomSheet({
       transparent={true}
       onRequestClose={onClose}
     >
-      <View className="flex-1 justify-end bg-black/50">
+      {/* Use StyleSheet with rgba for proper Android opacity support */}
+      <View style={styles.backdrop}>
+        <TouchableOpacity
+          style={styles.backdropTouchable}
+          activeOpacity={1}
+          onPress={onClose}
+        />
         <View className="bg-white rounded-t-3xl" style={{ maxHeight: "85%" }}>
           {/* Header */}
           <View className="flex-row justify-between items-center p-4 border-b border-gray-200">
@@ -269,3 +276,19 @@ export default function FilterBottomSheet({
     </Modal>
   );
 }
+
+// Use StyleSheet for proper Android opacity support
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.5)", // Use rgba instead of bg-black/50
+  },
+  backdropTouchable: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+});
