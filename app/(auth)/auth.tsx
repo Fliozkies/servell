@@ -8,6 +8,8 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
 
   async function handleLogin() {
@@ -27,28 +29,34 @@ export default function Login() {
 
   async function handleRegister() {
     if (password !== confirmPassword) {
-      Alert.alert(
-        "Passwords don't match!",
-        "Please try again, my ray of sunshine <3.",
-      );
+      Alert.alert("Passwords don't match");
       return;
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+        },
+      },
     });
+
+    if (error || !data.user) {
+      setLoading(false);
+      Alert.alert("Registration Error", error?.message ?? "Unknown error");
+      return;
+    }
 
     setLoading(false);
 
-    if (error) {
-      Alert.alert("Registration Error", error.message);
-    } else {
-      Alert.alert("Registration Successful!", "Check your email, mader faker", [
-        { text: "Ok??", onPress: () => setActiveTab("login") },
-      ]);
-    }
+    Alert.alert("Registration Successful", "Check your email", [
+      { text: "OK", onPress: () => setActiveTab("login") },
+    ]);
   }
 
   return (
@@ -65,6 +73,23 @@ export default function Login() {
         autoCapitalize="none"
         keyboardType="email-address"
       />
+
+      {activeTab === "register" && (
+        <>
+          <TextInput
+            className="border border-gray-300 rounded-lg px-4 py-3 mb-6"
+            placeholder="First Name"
+            value={firstName}
+            onChangeText={setFirstName}
+          />
+          <TextInput
+            className="border border-gray-300 rounded-lg px-4 py-3 mb-6"
+            placeholder="Last Name"
+            value={lastName}
+            onChangeText={setLastName}
+          />
+        </>
+      )}
 
       <TextInput
         className="border border-gray-300 rounded-lg px-4 py-3 mb-6"
