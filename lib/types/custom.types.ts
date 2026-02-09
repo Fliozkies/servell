@@ -1,4 +1,9 @@
-export type PageName = "Services" | "Progress" | "Message" | "Post" | "Profile";
+export type PageName =
+  | "Services"
+  | "Notification"
+  | "Message"
+  | "Post"
+  | "Profile";
 
 export type ItemProps = {
   title: string;

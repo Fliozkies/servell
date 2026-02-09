@@ -7,6 +7,7 @@ import { PageName } from "../../../lib/types/custom.types";
 import ConversationsScreen from "./conversations";
 import CreateService from "./create_service";
 import BottomNav from "./Navigation";
+import NotificationScreen from "./notification";
 import ServicesContent from "./services_content";
 
 export default function ServellApp() {
@@ -43,13 +44,7 @@ export default function ServellApp() {
       <View className="flex-1">
         {activeTab === "Services" && <ServicesContent />}
 
-        {activeTab === "Progress" && (
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-slate-600 text-lg">
-              Progress Content Coming Soon...
-            </Text>
-          </View>
-        )}
+        {activeTab === "Notification" && <NotificationScreen />}
 
         {activeTab === "Message" && <ConversationsScreen />}
 
