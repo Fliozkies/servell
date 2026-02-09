@@ -3,20 +3,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    KeyboardAvoidingView,
-    Platform,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-    fetchMessages,
-    markMessagesAsRead,
-    sendMessage,
-    subscribeToMessages,
+  KeyboardAvoidingView
+} from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  fetchMessages,
+  markMessagesAsRead,
+  sendMessage,
+  subscribeToMessages,
 } from "../../../lib/api/messaging.api";
 import { supabase } from "../../../lib/api/supabase";
 import { MessageWithSender } from "../../../lib/types/database.types";
@@ -29,6 +31,9 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
+
+  // insets
+  const insets = useSafeAreaInsets();
 
   const loadMessages = useCallback(async () => {
     try {
@@ -155,9 +160,9 @@ export default function ChatScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior="padding"
       className="flex-1 bg-slate-50"
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      keyboardVerticalOffset={0}
     >
       {/* Header */}
       <View className="bg-white border-b border-slate-200 px-4 pt-12 pb-4">
@@ -193,7 +198,10 @@ export default function ChatScreen() {
       />
 
       {/* Input Area */}
-      <View className="bg-white border-t border-slate-200 px-4 py-3">
+      <View
+        className="bg-white border-t border-slate-200 px-4 py-3"
+        style={{ paddingBottom: insets.bottom }}
+      >
         <View className="flex-row items-center">
           <TextInput
             value={messageText}
