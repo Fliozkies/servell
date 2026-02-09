@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "authWithTabs",
+    "name": "Servell",
     "slug": "authWithTabs",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Icon-1024-test.png",
     "scheme": "servell",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -24,7 +24,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.xfliozkies.authWithTabs"
+      "package": "com.xfliozkies.authWithTabs",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "output": "static",
