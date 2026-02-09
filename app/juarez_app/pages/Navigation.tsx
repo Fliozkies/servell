@@ -1,10 +1,4 @@
-import {
-  Bell,
-  Home,
-  MessageSquare,
-  Plus,
-  User
-} from "lucide-react-native";
+import { Bell, Home, MessageSquare, Plus, User } from "lucide-react-native";
 import React from "react";
 import { Platform, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,7 +18,6 @@ const BottomNav = ({
     <View
       style={{
         paddingBottom: responsivePadding,
-        paddingTop: 12,
       }}
     >
       <View className="flex-row items-center justify-between bg-white/95 px-4 py-3 border border-slate-200 border-b-0">
