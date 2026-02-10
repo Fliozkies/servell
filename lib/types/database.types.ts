@@ -47,6 +47,8 @@ export type Review = {
   user_id: string;
   rating: number;
   comment: string | null;
+  helpful_count: number;
+  unhelpful_count: number;
   created_at: string;
   updated_at: string;
 };
@@ -115,3 +117,116 @@ export type SendMessageInput = {
   conversation_id: string;
   content: string;
 };
+
+// ============================================
+// REVIEWS & COMMENTS TYPES
+// ============================================
+
+// Review with additional details
+export type ReviewWithDetails = Review & {
+  profile?: Profile;
+  review_reply?: ReviewReply;
+  user_reaction?: "helpful" | "unhelpful" | null;
+};
+
+// Review reaction
+export type ReviewReaction = {
+  id: string;
+  review_id: string;
+  user_id: string;
+  reaction_type: "helpful" | "unhelpful";
+  created_at: string;
+};
+
+// Review reply from provider
+export type ReviewReply = {
+  id: string;
+  review_id: string;
+  service_id: string;
+  provider_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// Review reply with provider details
+export type ReviewReplyWithDetails = ReviewReply & {
+  provider_profile?: Profile;
+};
+
+// Service comment
+export type ServiceComment = {
+  id: string;
+  service_id: string;
+  user_id: string;
+  parent_comment_id: string | null;
+  content: string;
+  like_count: number;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+// Comment with additional details
+export type CommentWithDetails = ServiceComment & {
+  profile?: Profile;
+  replies?: CommentWithDetails[];
+  user_has_liked?: boolean;
+  is_provider?: boolean;
+};
+
+// Comment like
+export type CommentLike = {
+  id: string;
+  comment_id: string;
+  user_id: string;
+  created_at: string;
+};
+
+// Input type for creating a review
+export type CreateReviewInput = {
+  service_id: string;
+  rating: number;
+  comment?: string;
+};
+
+// Input type for updating a review
+export type UpdateReviewInput = {
+  rating?: number;
+  comment?: string;
+};
+
+// Input type for creating a review reply
+export type CreateReviewReplyInput = {
+  review_id: string;
+  service_id: string;
+  content: string;
+};
+
+// Input type for creating a comment
+export type CreateCommentInput = {
+  service_id: string;
+  content: string;
+  parent_comment_id?: string;
+};
+
+// Input type for updating a comment
+export type UpdateCommentInput = {
+  content: string;
+};
+
+// Review filter options
+export type ReviewFilterOptions = {
+  rating?: number | null; // Filter by specific rating (1-5)
+  hasReply?: boolean | null; // true = with reply, false = no reply, null = all
+  sortBy:
+    | "newest"
+    | "oldest"
+    | "most_helpful"
+    | "most_critical"
+    | "highest_rating"
+    | "lowest_rating";
+};
+
+// Comment sort options
+export type CommentSortOption = "newest" | "oldest" | "most_liked";

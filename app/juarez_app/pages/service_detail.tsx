@@ -1,5 +1,5 @@
 // app/juarez_app/pages/service_detail.tsx
-import { AntDesign, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -7,14 +7,18 @@ import {
   Alert,
   Image,
   Linking,
-  ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { getOrCreateConversation } from "../../../lib/api/messaging.api";
 import { supabase } from "../../../lib/api/supabase";
+import CommentsTab from "../../../lib/components/service-tabs/CommentsTab";
+import OverviewTab from "../../../lib/components/service-tabs/OverviewTab";
+import ReviewsTab from "../../../lib/components/service-tabs/ReviewsTab";
 import { ServiceWithDetails } from "../../../lib/types/database.types";
+
+type TabType = "overview" | "reviews" | "comments";
 
 export default function ServiceDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,30 +26,42 @@ export default function ServiceDetail() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [startingChat, setStartingChat] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
 
-  const loadService = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from("services")
-        .select(
-          `
+  // MODIFIED: Made loadService accessible and added a silent refresh option
+  const loadService = useCallback(
+    async (silent = false) => {
+      try {
+        if (!silent) {
+          setLoading(true);
+        }
+
+        const { data, error } = await supabase
+          .from("services")
+          .select(
+            `
           *,
           category:categories(*),
           profile:profiles(*)
         `,
-        )
-        .eq("id", id)
-        .single();
+          )
+          .eq("id", id)
+          .single();
 
-      if (error) throw error;
-      setService(data);
-    } catch (error) {
-      console.error("Error loading service:", error);
-      Alert.alert("Error", "Failed to load service details");
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+        if (error) throw error;
+
+        setService(data);
+      } catch (error) {
+        console.error("Error loading service:", error);
+        if (!silent) {
+          Alert.alert("Error", "Failed to load service details");
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [id],
+  );
 
   const getCurrentUser = useCallback(async () => {
     const {
@@ -58,6 +74,14 @@ export default function ServiceDetail() {
     loadService();
     getCurrentUser();
   }, [loadService, getCurrentUser]);
+
+  // NEW: Refresh service data when switching to overview tab
+  useEffect(() => {
+    if (activeTab === "overview" && service) {
+      // Silently refresh the service data to get updated ratings
+      loadService(true);
+    }
+  }, [activeTab, loadService, service]);
 
   const handleStartChat = async () => {
     if (!service || !currentUserId) {
@@ -93,6 +117,11 @@ export default function ServiceDetail() {
     }
   };
 
+  // NEW: Callback to refresh service from child components
+  const handleServiceUpdate = useCallback(() => {
+    loadService(true);
+  }, [loadService]);
+
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-50">
@@ -112,10 +141,6 @@ export default function ServiceDetail() {
     );
   }
 
-  const authorName = service.profile?.first_name
-    ? `${service.profile.first_name} ${service.profile.last_name || ""}`.trim()
-    : "Unknown";
-  const categoryName = service.category?.name || "Uncategorized";
   const isOwnService = currentUserId === service.user_id;
 
   return (
@@ -130,127 +155,92 @@ export default function ServiceDetail() {
         </Text>
       </View>
 
-      <ScrollView className="flex-1">
-        {/* Image */}
-        {service.image_url ? (
-          <Image
-            source={{ uri: service.image_url }}
-            className="w-full h-64"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="w-full h-64 bg-slate-200 items-center justify-center">
-            <AntDesign name="picture" size={64} color="#94a3b8" />
-          </View>
-        )}
-
-        {/* Content */}
-        <View className="p-4">
-          {/* Category Badge */}
-          <View className="flex-row items-center mb-2">
-            <View className="bg-blue-100 px-3 py-1 rounded-full">
-              <Text className="text-blue-600 text-xs font-semibold">
-                {categoryName}
-              </Text>
-            </View>
-          </View>
-
-          {/* Title */}
-          <Text className="text-2xl font-bold text-slate-900 mb-2">
-            {service.title}
-          </Text>
-
-          {/* Rating */}
-          <View className="flex-row items-center mb-4">
-            <AntDesign name="star" size={16} color="#FCC419" />
-            <Text className="ml-1 text-base font-semibold text-slate-900">
-              {service.rating.toFixed(1)}
-            </Text>
-            {service.review_count > 0 && (
-              <Text className="ml-1 text-sm text-slate-500">
-                ({service.review_count} reviews)
-              </Text>
-            )}
-          </View>
-
-          {/* Price */}
-          <View className="bg-slate-100 p-4 rounded-2xl mb-4">
-            {service.price !== null ? (
-              <Text className="text-3xl font-black text-slate-900">
-                ₱{service.price.toLocaleString()}
-              </Text>
-            ) : (
-              <Text className="text-xl font-semibold text-slate-600">
-                Contact for price
-              </Text>
-            )}
-          </View>
-
-          {/* Description */}
-          <View className="mb-4">
-            <Text className="text-lg font-bold text-slate-900 mb-2">
-              Description
-            </Text>
-            <Text className="text-base text-slate-700 leading-6">
-              {service.description}
-            </Text>
-          </View>
-
-          {/* Location */}
-          <View className="flex-row items-center mb-4">
-            <Ionicons name="location-outline" size={20} color="#64748b" />
-            <Text className="ml-2 text-base text-slate-700">
-              {service.location}
-            </Text>
-          </View>
-
-          {/* Tags */}
-          {service.tags && service.tags.length > 0 && (
-            <View className="mb-4">
-              <Text className="text-lg font-bold text-slate-900 mb-2">
-                Tags
-              </Text>
-              <View className="flex-row flex-wrap">
-                {service.tags.map((tag, index) => (
-                  <View
-                    key={index}
-                    className="bg-slate-200 px-3 py-1 rounded-full mr-2 mb-2"
-                  >
-                    <Text className="text-slate-700 text-sm">{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* Seller Info */}
-          <View className="bg-white p-4 rounded-2xl border border-slate-200 mb-4">
-            <Text className="text-lg font-bold text-slate-900 mb-2">
-              Service Provider
-            </Text>
-            <View className="flex-row items-center">
-              <View className="w-12 h-12 rounded-full bg-blue-500 items-center justify-center">
-                <Text className="text-white text-lg font-bold">
-                  {authorName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View className="ml-3 flex-1">
-                <Text className="text-base font-semibold text-slate-900">
-                  {authorName}
-                </Text>
-                {service.profile?.physis_verified && (
-                  <View className="flex-row items-center mt-1">
-                    <MaterialIcons name="verified" size={16} color="#10b981" />
-                    <Text className="ml-1 text-sm text-emerald-600">
-                      Verified
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          </View>
+      {/* Service Image */}
+      {service.image_url ? (
+        <Image
+          source={{ uri: service.image_url }}
+          className="w-full h-64"
+          resizeMode="cover"
+        />
+      ) : (
+        <View className="w-full h-64 bg-slate-200 items-center justify-center">
+          <AntDesign name="picture" size={64} color="#94a3b8" />
         </View>
-      </ScrollView>
+      )}
+
+      {/* Tabs */}
+      <View className="bg-white border-b border-slate-200">
+        <View className="flex-row">
+          <TouchableOpacity
+            onPress={() => setActiveTab("overview")}
+            className={`flex-1 py-4 items-center border-b-2 ${
+              activeTab === "overview"
+                ? "border-blue-500"
+                : "border-transparent"
+            }`}
+          >
+            <Text
+              className={`font-semibold ${
+                activeTab === "overview" ? "text-blue-500" : "text-slate-600"
+              }`}
+            >
+              Overview
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setActiveTab("reviews")}
+            className={`flex-1 py-4 items-center border-b-2 ${
+              activeTab === "reviews" ? "border-blue-500" : "border-transparent"
+            }`}
+          >
+            <Text
+              className={`font-semibold ${
+                activeTab === "reviews" ? "text-blue-500" : "text-slate-600"
+              }`}
+            >
+              Reviews
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setActiveTab("comments")}
+            className={`flex-1 py-4 items-center border-b-2 ${
+              activeTab === "comments"
+                ? "border-blue-500"
+                : "border-transparent"
+            }`}
+          >
+            <Text
+              className={`font-semibold ${
+                activeTab === "comments" ? "text-blue-500" : "text-slate-600"
+              }`}
+            >
+              Comments
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Tab Content - MODIFIED: Pass onServiceUpdate to ReviewsTab */}
+      <View className="flex-1">
+        {activeTab === "overview" && <OverviewTab service={service} />}
+        {activeTab === "reviews" && (
+          <ReviewsTab
+            service={service}
+            currentUserId={currentUserId}
+            isOwnService={isOwnService}
+            onServiceUpdate={handleServiceUpdate} // NEW: Pass callback
+          />
+        )}
+        {activeTab === "comments" && (
+          <CommentsTab
+            service={service}
+            currentUserId={currentUserId}
+            isOwnService={isOwnService}
+          />
+        )}
+      </View>
 
       {/* Bottom Action Buttons */}
       {!isOwnService && (
