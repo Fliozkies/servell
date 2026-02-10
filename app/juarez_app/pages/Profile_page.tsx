@@ -56,23 +56,29 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// ── Helpers ─────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type ProfileTab = "posts" | "subscriptions" | "reviews";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 async function handleLogout() {
   await supabase.auth.signOut();
   router.replace("../../(auth)/auth");
 }
 
-// function formatBadge(n: number) {
-//   if (n <= 0) return null;
-//   return n > 99 ? "99+" : String(n);
-// }
+function formatDisplayName(profile: Profile | null): string {
+  if (!profile) return "My Profile";
+  return (
+    `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() ||
+    "My Profile"
+  );
+}
 
-// ── Main Component ───────────────────────────────────────────────────────────
+// ── Main Component ────────────────────────────────────────────────────────────
 
 const ProfilePage = () => {
-  const [activeTab, setActiveTab] = useState<
-    "posts" | "subscriptions" | "reviews"
-  >("posts");
+  const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
 
   // User data
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -89,25 +95,24 @@ const ProfilePage = () => {
   >([]);
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
 
-  // Reviews tab (owned reviews)
+  // Reviews tab
   const [reviews, setReviews] = useState<any[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
 
-  // Cache flags — only load each tab once; pull-to-refresh bypasses them
+  // Cache flags — only load each lazy tab once; pull-to-refresh bypasses them
   const subscriptionsLoadedRef = useRef(false);
   const reviewsLoadedRef = useRef(false);
 
-  // Global loading / refresh
+  // Global refresh state
   const [refreshing, setRefreshing] = useState(false);
 
   // Modal states
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
-  // const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [isActionSheetVisible, setIsActionSheetVisible] = useState(false);
   const [isEditServiceVisible, setIsEditServiceVisible] = useState(false);
   const [serviceToEdit, setServiceToEdit] = useState<Service | null>(null);
 
-  // ── Data loading ─────────────────────────────────────────────────────────
+  // ── Data Loaders ───────────────────────────────────────────────────────────
 
   const loadProfile = useCallback(async () => {
     const {
@@ -134,7 +139,6 @@ const ProfilePage = () => {
     setLoadingServices(true);
     try {
       const data = await fetchUserServices(currentUserId);
-      // Show all statuses except 'deleted' in the manage view
       setServices(data.filter((s) => s.status !== "deleted"));
     } catch (e) {
       console.error(e);
@@ -166,13 +170,15 @@ const ProfilePage = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setReviews(data || []);
+      setReviews(data ?? []);
     } catch (e) {
       console.error(e);
     } finally {
       setLoadingReviews(false);
     }
   }, [currentUserId]);
+
+  // ── Effects ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     loadProfile();
@@ -193,43 +199,49 @@ const ProfilePage = () => {
     }
   }, [activeTab, loadReviews, loadSubscriptions]);
 
+  // FIX: All used variables are listed as dependencies. This is correct because
+  // onRefresh reads activeTab and calls load* functions that may change identity.
+  // The load* functions themselves are stable (memoized with useCallback), so
+  // adding them here does NOT cause infinite loops — it just keeps the closure fresh.
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProfile();
-    if (activeTab === "posts") await loadServices();
-    if (activeTab === "subscriptions") {
-      subscriptionsLoadedRef.current = true; // keep marked as loaded after refresh
+    if (activeTab === "posts") {
+      await loadServices();
+    } else if (activeTab === "subscriptions") {
+      subscriptionsLoadedRef.current = true;
       await loadSubscriptions();
-    }
-    if (activeTab === "reviews") {
-      reviewsLoadedRef.current = true; // keep marked as loaded after refresh
+    } else if (activeTab === "reviews") {
+      reviewsLoadedRef.current = true;
       await loadReviews();
     }
     setRefreshing(false);
-  }, []);
+  }, [activeTab, loadProfile, loadServices, loadSubscriptions, loadReviews]);
 
-  // ── Service actions ──────────────────────────────────────────────────────
+  // ── Service Actions ────────────────────────────────────────────────────────
 
-  const openActionMenu = (service: Service) => {
+  const openActionMenu = useCallback((service: Service) => {
     setServiceToEdit(service);
     setIsActionSheetVisible(true);
-  };
+  }, []);
 
-  const handleToggleStatus = async (service: Service) => {
+  const handleToggleStatus = useCallback((service: Service) => {
     const newStatus = service.status === "active" ? "inactive" : "active";
-    const label = newStatus === "active" ? "activate" : "deactivate";
+    const label = newStatus === "active" ? "Activate" : "Deactivate";
+
     Alert.alert(
-      `${newStatus === "active" ? "Activate" : "Deactivate"} Service`,
-      `Are you sure you want to ${label} "${service.title}"?`,
+      `${label} Service`,
+      `Are you sure you want to ${label.toLowerCase()} "${service.title}"?`,
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: newStatus === "active" ? "Activate" : "Deactivate",
+          text: label,
           onPress: async () => {
             const { error } = await supabase
               .from("services")
               .update({ status: newStatus })
               .eq("id", service.id);
+
             if (!error) {
               setServices((prev) =>
                 prev.map((s) =>
@@ -241,13 +253,12 @@ const ProfilePage = () => {
         },
       ],
     );
-  };
+  }, []);
 
-  const handleDeleteService = async () => {
+  const handleDeleteService = useCallback(async () => {
     const captured = serviceToEdit;
     if (!captured) return;
     setIsActionSheetVisible(false);
-    // Small delay so the sheet animates out before the Alert appears
     setTimeout(() => {
       Alert.alert(
         "Delete Service",
@@ -258,7 +269,6 @@ const ProfilePage = () => {
             text: "Delete",
             style: "destructive",
             onPress: async () => {
-              // Soft delete
               const { error } = await supabase
                 .from("services")
                 .update({ status: "deleted" })
@@ -272,38 +282,37 @@ const ProfilePage = () => {
         ],
       );
     }, 300);
-  };
+  }, [serviceToEdit]);
 
-  // ── Subscription actions ─────────────────────────────────────────────────
+  // ── Subscription Actions ───────────────────────────────────────────────────
 
-  const handleUnsubscribe = (providerId: string, providerName: string) => {
-    Alert.alert("Unsubscribe", `Stop following ${providerName}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Unsubscribe",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await unsubscribeFromProvider(providerId);
-            setSubscriptions((prev) =>
-              prev.filter((s) => s.provider_id !== providerId),
-            );
-          } catch (e) {
-            Alert.alert("Error", "Could not unsubscribe. Please try again.");
-            console.log("Error line 281: " + e);
-          }
+  const handleUnsubscribe = useCallback(
+    (providerId: string, providerName: string) => {
+      Alert.alert("Unsubscribe", `Stop following ${providerName}?`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unsubscribe",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await unsubscribeFromProvider(providerId);
+              setSubscriptions((prev) =>
+                prev.filter((s) => s.provider_id !== providerId),
+              );
+            } catch (e) {
+              Alert.alert("Error", "Could not unsubscribe. Please try again.");
+              console.error("Unsubscribe error:", e);
+            }
+          },
         },
-      },
-    ]);
-  };
+      ]);
+    },
+    [],
+  );
 
-  // ── Derived values ───────────────────────────────────────────────────────
+  // ── Derived Values ─────────────────────────────────────────────────────────
 
-  const displayName = profile
-    ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
-      "My Profile"
-    : "My Profile";
-
+  const displayName = formatDisplayName(profile);
   const activeServiceCount = services.filter(
     (s) => s.status === "active",
   ).length;
@@ -314,7 +323,7 @@ const ProfilePage = () => {
         ).toFixed(1)
       : "—";
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -343,10 +352,9 @@ const ProfilePage = () => {
         {/* Profile Header Card */}
         <View className="px-5 pt-6 pb-4">
           <View className="flex-row items-center">
-            {/* Avatar */}
             <View className="w-20 h-20 rounded-2xl bg-slate-200 items-center justify-center">
               <Text className="text-3xl font-bold text-slate-500">
-                {displayName[0]?.toUpperCase() || "?"}
+                {displayName[0]?.toUpperCase() ?? "?"}
               </Text>
             </View>
 
@@ -381,7 +389,7 @@ const ProfilePage = () => {
           </View>
         </View>
 
-        {/* Tabs */}
+        {/* Tab Bar */}
         <View className="flex-row px-5 border-b border-slate-100">
           <ProfileTabButton
             active={activeTab === "posts"}
@@ -409,9 +417,7 @@ const ProfilePage = () => {
           {activeTab === "posts" && (
             <>
               {loadingServices ? (
-                <View className="py-16 items-center">
-                  <ActivityIndicator color="#1877F2" />
-                </View>
+                <LoadingSpinner />
               ) : services.length === 0 ? (
                 <EmptyState
                   icon={<List size={32} color="#94a3b8" />}
@@ -435,9 +441,7 @@ const ProfilePage = () => {
           {activeTab === "subscriptions" && (
             <>
               {loadingSubscriptions ? (
-                <View className="py-16 items-center">
-                  <ActivityIndicator color="#1877F2" />
-                </View>
+                <LoadingSpinner />
               ) : subscriptions.length === 0 ? (
                 <EmptyState
                   icon={<Users size={32} color="#94a3b8" />}
@@ -445,59 +449,13 @@ const ProfilePage = () => {
                   subtitle="Subscribe to service providers on their profile to stay updated."
                 />
               ) : (
-                subscriptions.map((sub) => {
-                  const p = sub.provider_profile;
-                  const name = p
-                    ? `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
-                      "Provider"
-                    : "Provider";
-                  return (
-                    <View
-                      key={sub.id}
-                      className="flex-row items-center py-3 border-b border-slate-50"
-                    >
-                      <View className="w-12 h-12 rounded-xl bg-slate-200 items-center justify-center mr-3">
-                        <Text className="text-lg font-bold text-slate-500">
-                          {name[0]?.toUpperCase() || "?"}
-                        </Text>
-                      </View>
-                      <View className="flex-1">
-                        <View className="flex-row items-center">
-                          <Text className="font-semibold text-slate-900">
-                            {name}
-                          </Text>
-                          {p?.physis_verified && (
-                            <BadgeCheck
-                              size={14}
-                              color="#1877F2"
-                              className="ml-1"
-                            />
-                          )}
-                        </View>
-                        <Text className="text-xs text-slate-400 mt-0.5">
-                          Since{" "}
-                          {new Date(sub.created_at).toLocaleDateString(
-                            "en-PH",
-                            {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            },
-                          )}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => handleUnsubscribe(sub.provider_id, name)}
-                        className="bg-slate-100 rounded-full px-3 py-1.5 flex-row items-center"
-                      >
-                        <UserMinus size={14} color="#64748b" />
-                        <Text className="text-xs font-medium text-slate-600 ml-1">
-                          Unfollow
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })
+                subscriptions.map((sub) => (
+                  <SubscriptionRow
+                    key={sub.id}
+                    subscription={sub}
+                    onUnsubscribe={handleUnsubscribe}
+                  />
+                ))
               )}
             </>
           )}
@@ -506,9 +464,7 @@ const ProfilePage = () => {
           {activeTab === "reviews" && (
             <>
               {loadingReviews ? (
-                <View className="py-16 items-center">
-                  <ActivityIndicator color="#1877F2" />
-                </View>
+                <LoadingSpinner />
               ) : reviews.length === 0 ? (
                 <EmptyState
                   icon={<Star size={32} color="#94a3b8" />}
@@ -517,46 +473,7 @@ const ProfilePage = () => {
                 />
               ) : (
                 reviews.map((review) => (
-                  <View
-                    key={review.id}
-                    className="bg-white border border-slate-100 rounded-2xl p-4 mb-3"
-                  >
-                    <Text
-                      className="text-sm font-semibold text-slate-800 mb-1"
-                      numberOfLines={1}
-                    >
-                      {review.service?.title || "Service"}
-                    </Text>
-                    <View className="flex-row items-center mb-2">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star
-                          key={i}
-                          size={13}
-                          color="#f59e0b"
-                          fill={i < review.rating ? "#f59e0b" : "transparent"}
-                        />
-                      ))}
-                      <Text className="text-xs text-slate-400 ml-2">
-                        {new Date(review.created_at).toLocaleDateString(
-                          "en-PH",
-                          {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          },
-                        )}
-                      </Text>
-                    </View>
-                    {review.comment ? (
-                      <Text className="text-sm text-slate-600">
-                        {review.comment}
-                      </Text>
-                    ) : (
-                      <Text className="text-sm text-slate-300 italic">
-                        No comment
-                      </Text>
-                    )}
-                  </View>
+                  <ReviewCard key={review.id} review={review} />
                 ))
               )}
             </>
@@ -564,7 +481,7 @@ const ProfilePage = () => {
         </View>
       </ScrollView>
 
-      {/* ── Action Sheet (edit/delete/toggle) ── */}
+      {/* ── Action Sheet ── */}
       <Modal visible={isActionSheetVisible} transparent animationType="slide">
         <TouchableOpacity
           className="flex-1 bg-black/40 justify-end"
@@ -592,7 +509,6 @@ const ProfilePage = () => {
               label="Edit Service"
               onPress={() => {
                 setIsActionSheetVisible(false);
-                // Small delay so the action sheet fully closes before edit modal opens
                 setTimeout(() => setIsEditServiceVisible(true), 300);
               }}
             />
@@ -658,7 +574,13 @@ const ProfilePage = () => {
   );
 };
 
-// ── Sub-components ───────────────────────────────────────────────────────────
+// ── Shared UI Primitives ──────────────────────────────────────────────────────
+
+const LoadingSpinner = () => (
+  <View className="py-16 items-center">
+    <ActivityIndicator color="#1877F2" />
+  </View>
+);
 
 const StatPill = ({
   label,
@@ -673,7 +595,17 @@ const StatPill = ({
   </View>
 );
 
-const ProfileTabButton = ({ active, onPress, label, Icon }: any) => (
+const ProfileTabButton = ({
+  active,
+  onPress,
+  label,
+  Icon,
+}: {
+  active: boolean;
+  onPress: () => void;
+  label: string;
+  Icon: React.ComponentType<{ size: number; color: string }>;
+}) => (
   <TouchableOpacity
     onPress={onPress}
     className={`flex-row items-center py-3.5 mr-5 border-b-2 ${
@@ -691,10 +623,74 @@ const ProfileTabButton = ({ active, onPress, label, Icon }: any) => (
   </TouchableOpacity>
 );
 
+const EmptyState = ({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactElement;
+  title: string;
+  subtitle: string;
+}) => (
+  <View className="py-16 items-center px-6">
+    <View className="w-16 h-16 rounded-full bg-slate-100 items-center justify-center mb-4">
+      {icon}
+    </View>
+    <Text className="text-base font-bold text-slate-700 text-center">
+      {title}
+    </Text>
+    <Text className="text-sm text-slate-400 text-center mt-1">{subtitle}</Text>
+  </View>
+);
+
+const FormField = ({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) => (
+  <View className="mb-4">
+    <Text className="text-sm font-semibold text-slate-700 mb-2">
+      {label} {required && <Text className="text-red-500">*</Text>}
+    </Text>
+    {children}
+  </View>
+);
+
+const MenuOption = ({
+  icon,
+  label,
+  onPress,
+  destructive,
+}: {
+  icon: React.ReactElement;
+  label: string;
+  onPress: () => void;
+  destructive?: boolean;
+}) => (
+  <TouchableOpacity
+    onPress={onPress}
+    className="flex-row items-center py-4 px-2 rounded-xl active:bg-slate-50"
+  >
+    {icon}
+    <Text
+      className={`ml-4 text-base ${
+        destructive ? "text-red-500 font-bold" : "text-slate-900 font-medium"
+      }`}
+    >
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
+// ── Tab-specific Sub-components ───────────────────────────────────────────────
+
 const ServiceCard = ({
   service,
   onMorePress,
-  onToggleStatus,
 }: {
   service: Service;
   onMorePress: () => void;
@@ -757,23 +753,84 @@ const ServiceCard = ({
   </View>
 );
 
-const EmptyState = ({
-  icon,
-  title,
-  subtitle,
+const SubscriptionRow = ({
+  subscription: sub,
+  onUnsubscribe,
 }: {
-  icon: React.ReactElement;
-  title: string;
-  subtitle: string;
-}) => (
-  <View className="py-16 items-center px-6">
-    <View className="w-16 h-16 rounded-full bg-slate-100 items-center justify-center mb-4">
-      {icon}
+  subscription: ServiceSubscriptionWithProfile;
+  onUnsubscribe: (providerId: string, name: string) => void;
+}) => {
+  const p = sub.provider_profile;
+  const name = p
+    ? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() || "Provider"
+    : "Provider";
+
+  return (
+    <View className="flex-row items-center py-3 border-b border-slate-50">
+      <View className="w-12 h-12 rounded-xl bg-slate-200 items-center justify-center mr-3">
+        <Text className="text-lg font-bold text-slate-500">
+          {name[0]?.toUpperCase() ?? "?"}
+        </Text>
+      </View>
+      <View className="flex-1">
+        <View className="flex-row items-center">
+          <Text className="font-semibold text-slate-900">{name}</Text>
+          {p?.physis_verified && (
+            <BadgeCheck size={14} color="#1877F2" className="ml-1" />
+          )}
+        </View>
+        <Text className="text-xs text-slate-400 mt-0.5">
+          Since{" "}
+          {new Date(sub.created_at).toLocaleDateString("en-PH", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={() => onUnsubscribe(sub.provider_id, name)}
+        className="bg-slate-100 rounded-full px-3 py-1.5 flex-row items-center"
+      >
+        <UserMinus size={14} color="#64748b" />
+        <Text className="text-xs font-medium text-slate-600 ml-1">
+          Unfollow
+        </Text>
+      </TouchableOpacity>
     </View>
-    <Text className="text-base font-bold text-slate-700 text-center">
-      {title}
+  );
+};
+
+const ReviewCard = ({ review }: { review: any }) => (
+  <View className="bg-white border border-slate-100 rounded-2xl p-4 mb-3">
+    <Text
+      className="text-sm font-semibold text-slate-800 mb-1"
+      numberOfLines={1}
+    >
+      {review.service?.title ?? "Service"}
     </Text>
-    <Text className="text-sm text-slate-400 text-center mt-1">{subtitle}</Text>
+    <View className="flex-row items-center mb-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Star
+          key={i}
+          size={13}
+          color="#f59e0b"
+          fill={i < review.rating ? "#f59e0b" : "transparent"}
+        />
+      ))}
+      <Text className="text-xs text-slate-400 ml-2">
+        {new Date(review.created_at).toLocaleDateString("en-PH", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })}
+      </Text>
+    </View>
+    {review.comment ? (
+      <Text className="text-sm text-slate-600">{review.comment}</Text>
+    ) : (
+      <Text className="text-sm text-slate-300 italic">No comment</Text>
+    )}
   </View>
 );
 
@@ -796,8 +853,8 @@ const EditServiceModal = ({
     service.price != null ? String(service.price) : "",
   );
   const [location, setLocation] = useState(service.location);
-  const [phoneNumber, setPhoneNumber] = useState(service.phone_number || "");
-  const [tags, setTags] = useState<string[]>(service.tags || []);
+  const [phoneNumber, setPhoneNumber] = useState(service.phone_number ?? "");
+  const [tags, setTags] = useState<string[]>(service.tags ?? []);
   const [currentTag, setCurrentTag] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -807,17 +864,16 @@ const EditServiceModal = ({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (visible) {
-      loadCategories({ setLoadingCategories: () => {}, setCategories });
-      setTitle(service.title);
-      setDescription(service.description);
-      setPrice(service.price != null ? String(service.price) : "");
-      setLocation(service.location);
-      setPhoneNumber(service.phone_number || "");
-      setTags(service.tags || []);
-      setSelectedCategory(service.category_id);
-      setSelectedImage(null);
-    }
+    if (!visible) return;
+    loadCategories({ setLoadingCategories: () => {}, setCategories });
+    setTitle(service.title);
+    setDescription(service.description);
+    setPrice(service.price != null ? String(service.price) : "");
+    setLocation(service.location);
+    setPhoneNumber(service.phone_number ?? "");
+    setTags(service.tags ?? []);
+    setSelectedCategory(service.category_id);
+    setSelectedImage(null);
   }, [visible, service]);
 
   const handleSave = async () => {
@@ -888,7 +944,7 @@ const EditServiceModal = ({
         </View>
 
         <ScrollView className="flex-1 p-5" showsVerticalScrollIndicator={false}>
-          {/* Image */}
+          {/* Image Picker */}
           <TouchableOpacity
             onPress={() => pickImage(setSelectedImage)}
             className="border-2 border-dashed border-slate-300 rounded-2xl overflow-hidden mb-4"
@@ -897,7 +953,7 @@ const EditServiceModal = ({
             {selectedImage || service.image_url ? (
               <Image
                 source={{
-                  uri: selectedImage || service.image_url || undefined,
+                  uri: selectedImage ?? service.image_url ?? undefined,
                 }}
                 className="w-full h-full"
                 resizeMode="cover"
@@ -1041,24 +1097,24 @@ const EditServiceModal = ({
   );
 };
 
-const FormField = ({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) => (
-  <View className="mb-4">
-    <Text className="text-sm font-semibold text-slate-700 mb-2">
-      {label} {required && <Text className="text-red-500">*</Text>}
-    </Text>
-    {children}
-  </View>
-);
-
 // ── Settings Modal ────────────────────────────────────────────────────────────
+
+type SettingsSection =
+  | "main"
+  | "account"
+  | "verify"
+  | "terms"
+  | "help"
+  | "notifPrefs";
+
+const SECTION_TITLES: Record<SettingsSection, string> = {
+  main: "Settings",
+  account: "Account Details",
+  verify: "Verify Account",
+  terms: "Terms & Services",
+  help: "Help",
+  notifPrefs: "Notifications",
+};
 
 const SettingsModal = ({
   visible,
@@ -1071,21 +1127,16 @@ const SettingsModal = ({
   onClose: () => void;
   onProfileUpdated: (p: Profile) => void;
 }) => {
-  const [section, setSection] = useState<
-    "main" | "account" | "verify" | "terms" | "help" | "notifPrefs"
-  >("main");
-
-  const [firstName, setFirstName] = useState(profile?.first_name || "");
-  const [lastName, setLastName] = useState(profile?.last_name || "");
+  const [section, setSection] = useState<SettingsSection>("main");
+  const [firstName, setFirstName] = useState(profile?.first_name ?? "");
+  const [lastName, setLastName] = useState(profile?.last_name ?? "");
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // Reset to main every time modal opens
   useEffect(() => {
-    if (visible) {
-      setSection("main");
-      setFirstName(profile?.first_name || "");
-      setLastName(profile?.last_name || "");
-    }
+    if (!visible) return;
+    setSection("main");
+    setFirstName(profile?.first_name ?? "");
+    setLastName(profile?.last_name ?? "");
   }, [visible, profile]);
 
   const saveProfileDetails = async () => {
@@ -1144,21 +1195,16 @@ const SettingsModal = ({
       <SafeAreaView className="flex-1 bg-white">
         {/* Header */}
         <View className="flex-row items-center px-5 py-4 border-b border-slate-100">
-          {section !== "main" ? (
+          {section !== "main" && (
             <TouchableOpacity
               onPress={() => setSection("main")}
               className="p-1 mr-3"
             >
               <AntDesign name="arrow-left" size={22} color="#0f172a" />
             </TouchableOpacity>
-          ) : null}
+          )}
           <Text className="text-xl font-bold text-slate-900 flex-1">
-            {section === "main" && "Settings"}
-            {section === "account" && "Account Details"}
-            {section === "verify" && "Verify Account"}
-            {section === "terms" && "Terms & Services"}
-            {section === "help" && "Help"}
-            {section === "notifPrefs" && "Notifications"}
+            {SECTION_TITLES[section]}
           </Text>
           {section === "main" && (
             <TouchableOpacity onPress={onClose} className="p-1">
@@ -1181,7 +1227,6 @@ const SettingsModal = ({
         </View>
 
         <ScrollView className="flex-1">
-          {/* ── MAIN ── */}
           {section === "main" && (
             <View className="p-5">
               <SectionGroup label="Account">
@@ -1254,7 +1299,6 @@ const SettingsModal = ({
             </View>
           )}
 
-          {/* ── ACCOUNT DETAILS ── */}
           {section === "account" && (
             <View className="p-5">
               <FormField label="First Name">
@@ -1285,7 +1329,6 @@ const SettingsModal = ({
             </View>
           )}
 
-          {/* ── VERIFY ── */}
           {section === "verify" && (
             <View className="p-5">
               {profile?.physis_verified ? (
@@ -1308,7 +1351,6 @@ const SettingsModal = ({
                     You&#x2019;ll receive a blue checkmark badge on your profile
                     after verification.
                   </Text>
-
                   <View className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
                     <Text className="text-sm font-semibold text-amber-800 mb-1">
                       📋 What you&#x2019;ll need
@@ -1318,12 +1360,10 @@ const SettingsModal = ({
                       your profile match your ID.
                     </Text>
                   </View>
-
                   <Text className="text-xs text-slate-400 mb-6">
                     Note: Automated verification is coming soon. This will mark
                     your account as verified for demonstration purposes.
                   </Text>
-
                   <TouchableOpacity
                     onPress={requestVerification}
                     className="bg-[#1877F2] py-4 rounded-2xl items-center"
@@ -1337,32 +1377,13 @@ const SettingsModal = ({
             </View>
           )}
 
-          {/* ── NOTIFICATION PREFERENCES ── */}
           {section === "notifPrefs" && (
             <View className="p-5">
               <Text className="text-slate-500 text-sm mb-4">
                 Choose which notifications you receive. (Full preference
                 management coming in a future update.)
               </Text>
-              {[
-                { label: "Messages", subtitle: "New chat messages" },
-                {
-                  label: "Reviews & Replies",
-                  subtitle: "Reviews on your services",
-                },
-                {
-                  label: "Subscriber alerts",
-                  subtitle: "When someone follows you",
-                },
-                {
-                  label: "Discount alerts",
-                  subtitle: "From providers you follow",
-                },
-                {
-                  label: "Platform announcements",
-                  subtitle: "Holiday deals & news",
-                },
-              ].map((item) => (
+              {NOTIFICATION_PREFS.map((item) => (
                 <View
                   key={item.label}
                   className="flex-row items-center justify-between py-4 border-b border-slate-50"
@@ -1386,73 +1407,35 @@ const SettingsModal = ({
             </View>
           )}
 
-          {/* ── TERMS ── */}
           {section === "terms" && (
             <View className="p-5">
               <Text className="text-lg font-bold text-slate-900 mb-3">
                 Terms of Service
               </Text>
-              <Text className="text-sm text-slate-600 leading-6 mb-4">
-                By using Servell, you agree to use the platform responsibly and
-                in accordance with applicable laws in the Philippines.
-              </Text>
-              <Text className="text-sm font-semibold text-slate-800 mb-2">
-                Service Listings
-              </Text>
-              <Text className="text-sm text-slate-600 leading-6 mb-4">
-                You are responsible for the accuracy and legality of any
-                services you post. Servell reserves the right to remove listings
-                that violate our community guidelines.
-              </Text>
-              <Text className="text-sm font-semibold text-slate-800 mb-2">
-                Payments
-              </Text>
-              <Text className="text-sm text-slate-600 leading-6 mb-4">
-                Servell does not process payments between buyers and sellers.
-                All financial arrangements are made directly between users.
-              </Text>
-              <Text className="text-sm font-semibold text-slate-800 mb-2">
-                Privacy
-              </Text>
-              <Text className="text-sm text-slate-600 leading-6 mb-4">
-                Your data is stored securely on Supabase infrastructure. We do
-                not sell your personal data to third parties. See our full
-                Privacy Policy for more details.
-              </Text>
+              {TERMS_SECTIONS.map((t) => (
+                <View key={t.heading}>
+                  {t.heading ? (
+                    <Text className="text-sm font-semibold text-slate-800 mb-2">
+                      {t.heading}
+                    </Text>
+                  ) : null}
+                  <Text className="text-sm text-slate-600 leading-6 mb-4">
+                    {t.body}
+                  </Text>
+                </View>
+              ))}
               <Text className="text-xs text-slate-400 mt-4">
                 Last updated: February 2026
               </Text>
             </View>
           )}
 
-          {/* ── HELP ── */}
           {section === "help" && (
             <View className="p-5">
               <Text className="text-lg font-bold text-slate-900 mb-4">
                 Help & Support
               </Text>
-              {[
-                {
-                  q: "How do I post a service?",
-                  a: 'Tap the + button in the bottom navigation bar. Fill in your service details and tap "Post Service".',
-                },
-                {
-                  q: "How do I message a provider?",
-                  a: 'Open a service listing and tap "Contact Provider". This will start a private conversation.',
-                },
-                {
-                  q: "How do I leave a review?",
-                  a: 'You must first start a conversation with the provider. After that, a "Write a Review" option will be available on the service page.',
-                },
-                {
-                  q: "How do I subscribe to a provider?",
-                  a: "Visit a service provider's profile and tap the Subscribe button. You'll then receive updates when they post discounts or new services.",
-                },
-                {
-                  q: "How do I verify my account?",
-                  a: "Go to Settings → Verify Account and follow the instructions to submit your PhilSys ID.",
-                },
-              ].map((item) => (
+              {HELP_FAQS.map((item) => (
                 <View key={item.q} className="mb-5">
                   <Text className="font-semibold text-slate-800 mb-1">
                     {item.q}
@@ -1478,6 +1461,8 @@ const SettingsModal = ({
     </Modal>
   );
 };
+
+// ── Settings Sub-components ───────────────────────────────────────────────────
 
 const SectionGroup = ({
   label,
@@ -1518,7 +1503,9 @@ const SettingsRow = ({
     <View className="w-8 items-center mr-3">{icon}</View>
     <View className="flex-1">
       <Text
-        className={`font-medium text-base ${destructive ? "text-red-500" : "text-slate-900"}`}
+        className={`font-medium text-base ${
+          destructive ? "text-red-500" : "text-slate-900"
+        }`}
       >
         {label}
       </Text>
@@ -1530,30 +1517,56 @@ const SettingsRow = ({
   </TouchableOpacity>
 );
 
-const MenuOption = ({
-  icon,
-  label,
-  onPress,
-  destructive,
-}: {
-  icon: React.ReactElement;
-  label: string;
-  onPress: () => void;
-  destructive?: boolean;
-}) => (
-  <TouchableOpacity
-    onPress={onPress}
-    className="flex-row items-center py-4 px-2 rounded-xl active:bg-slate-50"
-  >
-    {icon}
-    <Text
-      className={`ml-4 text-base ${
-        destructive ? "text-red-500 font-bold" : "text-slate-900 font-medium"
-      }`}
-    >
-      {label}
-    </Text>
-  </TouchableOpacity>
-);
+// ── Static Data ───────────────────────────────────────────────────────────────
+
+const NOTIFICATION_PREFS = [
+  { label: "Messages", subtitle: "New chat messages" },
+  { label: "Reviews & Replies", subtitle: "Reviews on your services" },
+  { label: "Subscriber alerts", subtitle: "When someone follows you" },
+  { label: "Discount alerts", subtitle: "From providers you follow" },
+  { label: "Platform announcements", subtitle: "Holiday deals & news" },
+];
+
+const TERMS_SECTIONS = [
+  {
+    heading: "",
+    body: "By using Servell, you agree to use the platform responsibly and in accordance with applicable laws in the Philippines.",
+  },
+  {
+    heading: "Service Listings",
+    body: "You are responsible for the accuracy and legality of any services you post. Servell reserves the right to remove listings that violate our community guidelines.",
+  },
+  {
+    heading: "Payments",
+    body: "Servell does not process payments between buyers and sellers. All financial arrangements are made directly between users.",
+  },
+  {
+    heading: "Privacy",
+    body: "Your data is stored securely on Supabase infrastructure. We do not sell your personal data to third parties. See our full Privacy Policy for more details.",
+  },
+];
+
+const HELP_FAQS = [
+  {
+    q: "How do I post a service?",
+    a: 'Tap the + button in the bottom navigation bar. Fill in your service details and tap "Post Service".',
+  },
+  {
+    q: "How do I message a provider?",
+    a: 'Open a service listing and tap "Contact Provider". This will start a private conversation.',
+  },
+  {
+    q: "How do I leave a review?",
+    a: 'You must first start a conversation with the provider. After that, a "Write a Review" option will be available on the service page.',
+  },
+  {
+    q: "How do I subscribe to a provider?",
+    a: "Visit a service provider's profile and tap the Subscribe button. You'll then receive updates when they post discounts or new services.",
+  },
+  {
+    q: "How do I verify my account?",
+    a: "Go to Settings → Verify Account and follow the instructions to submit your PhilSys ID.",
+  },
+];
 
 export default ProfilePage;
