@@ -95,7 +95,10 @@ export const removeTag = (
 };
 
 // Upload image to Supabase Storage
-export const uploadImage = async (imageUri: string): Promise<string | null> => {
+export const uploadImage = async (
+  imageUri: string,
+  bucket: string,
+): Promise<string | null> => {
   try {
     console.log("Starting upload for:", imageUri);
 
@@ -114,7 +117,7 @@ export const uploadImage = async (imageUri: string): Promise<string | null> => {
     console.log("ArrayBuffer size:", arrayBuffer.byteLength);
 
     const { error } = await supabase.storage
-      .from("service-images")
+      .from(bucket)
       .upload(fileName, arrayBuffer, {
         contentType: `image/${fileExt}`,
         upsert: false,
@@ -124,7 +127,7 @@ export const uploadImage = async (imageUri: string): Promise<string | null> => {
 
     const {
       data: { publicUrl },
-    } = supabase.storage.from("service-images").getPublicUrl(fileName);
+    } = supabase.storage.from(bucket).getPublicUrl(fileName);
 
     return publicUrl;
   } catch (error) {
@@ -220,7 +223,7 @@ export const handleSubmit = async ({
     // Upload image if selected
     let imageUrl: string | null = null;
     if (selectedImage) {
-      imageUrl = await uploadImage(selectedImage);
+      imageUrl = await uploadImage(selectedImage, "service-images");
     }
 
     // Prepare service data

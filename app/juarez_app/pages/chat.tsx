@@ -1,4 +1,5 @@
 // app/juarez_app/pages/chat.tsx
+import { uploadImage } from "@/lib/functions/create_service";
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
@@ -23,7 +24,6 @@ import {
   markMessagesAsRead,
   sendMessage,
   subscribeToMessages,
-  uploadChatImage,
 } from "../../../lib/api/messaging.api";
 import { supabase } from "../../../lib/api/supabase";
 import { MessageWithSender } from "../../../lib/types/database.types";
@@ -148,7 +148,7 @@ export default function ChatScreen() {
   // Pick and send image
   const handlePickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       quality: 0.8,
       allowsEditing: false,
     });
@@ -173,7 +173,7 @@ export default function ChatScreen() {
     setUploadingImage(true);
 
     try {
-      const publicUrl = await uploadChatImage(uri);
+      const publicUrl = await uploadImage(uri, "chat-images");
       const content = `${IMAGE_MESSAGE_PREFIX}${publicUrl}`;
       await sendMessage({ conversation_id: conversationId, content });
       // Replace optimistic with the real URL version (subscription will confirm)
