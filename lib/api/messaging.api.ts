@@ -1,13 +1,55 @@
 // lib/api/messaging.api.ts
 import {
-    Conversation,
-    ConversationWithDetails,
-    CreateConversationInput,
-    Message,
-    MessageWithSender,
-    SendMessageInput,
+  Conversation,
+  ConversationWithDetails,
+  CreateConversationInput,
+  Message,
+  MessageWithSender,
+  SendMessageInput,
 } from "../types/database.types";
 import { supabase } from "./supabase";
+
+// Image messages are stored in the messages.content field with this prefix.
+// e.g. "[image]:https://..."
+export const IMAGE_MESSAGE_PREFIX = "[image]:";
+
+export function isImageMessage(content: string): boolean {
+  return content.startsWith(IMAGE_MESSAGE_PREFIX);
+}
+
+export function getImageUrl(content: string): string {
+  return content.slice(IMAGE_MESSAGE_PREFIX.length);
+}
+
+/**
+ * Upload a chat image to Supabase storage and return its public URL.
+ * Images are stored in the "chat-images" bucket under {userId}/{timestamp}.{ext}
+ */
+export async function uploadChatImage(uri: string): Promise<string> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("User not authenticated");
+
+  // Fetch the local file as a blob
+  const response = await fetch(uri);
+  const blob = await response.blob();
+
+  const ext = uri.split(".").pop()?.toLowerCase() || "jpg";
+  const fileName = `${user.id}/${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("chat-images")
+    .upload(fileName, blob, {
+      contentType: `image/${ext === "jpg" ? "jpeg" : ext}`,
+      upsert: false,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage.from("chat-images").getPublicUrl(fileName);
+  return data.publicUrl;
+}
 
 /**
  * Get or create a conversation between buyer and seller for a specific service
@@ -20,11 +62,8 @@ export async function getOrCreateConversation(
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      throw new Error("User not authenticated");
-    }
+    if (!user) throw new Error("User not authenticated");
 
-    // Check if conversation already exists
     const { data: existing } = await supabase
       .from("conversations")
       .select("*")
@@ -32,11 +71,8 @@ export async function getOrCreateConversation(
       .eq("buyer_id", user.id)
       .single();
 
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
 
-    // Create new conversation
     const { data, error } = await supabase
       .from("conversations")
       .insert({
@@ -66,9 +102,7 @@ export async function fetchConversations(): Promise<ConversationWithDetails[]> {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      throw new Error("User not authenticated");
-    }
+    if (!user) throw new Error("User not authenticated");
 
     const { data, error } = await supabase
       .from("conversations")
@@ -85,10 +119,8 @@ export async function fetchConversations(): Promise<ConversationWithDetails[]> {
 
     if (error) throw error;
 
-    // Fetch last message and unread count for each conversation
     const conversationsWithDetails = await Promise.all(
       (data || []).map(async (conversation) => {
-        // Get last message
         const { data: lastMessage } = await supabase
           .from("messages")
           .select("*")
@@ -97,7 +129,6 @@ export async function fetchConversations(): Promise<ConversationWithDetails[]> {
           .limit(1)
           .single();
 
-        // Get unread count
         const { count: unreadCount } = await supabase
           .from("messages")
           .select("*", { count: "exact", head: true })
@@ -155,9 +186,7 @@ export async function sendMessage(input: SendMessageInput): Promise<Message> {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      throw new Error("User not authenticated");
-    }
+    if (!user) throw new Error("User not authenticated");
 
     const { data, error } = await supabase
       .from("messages")
@@ -190,9 +219,7 @@ export async function markMessagesAsRead(
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) {
-      throw new Error("User not authenticated");
-    }
+    if (!user) throw new Error("User not authenticated");
 
     const { error } = await supabase
       .from("messages")

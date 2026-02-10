@@ -20,17 +20,17 @@ type ReviewFilterBottomSheetProps = {
 
 const RATING_OPTIONS = [
   { value: null, label: "All" },
-  { value: 5, label: "5★" },
-  { value: 4, label: "4★" },
-  { value: 3, label: "3★" },
-  { value: 2, label: "2★" },
-  { value: 1, label: "1★" },
+  { value: 5, label: "5 ★" },
+  { value: 4, label: "4 ★" },
+  { value: 3, label: "3 ★" },
+  { value: 2, label: "2 ★" },
+  { value: 1, label: "1 ★" },
 ];
 
 const REPLY_OPTIONS = [
   { value: null, label: "All Reviews" },
-  { value: true, label: "With Provider Reply" },
-  { value: false, label: "No Reply Yet" },
+  { value: true, label: "With Reply" },
+  { value: false, label: "No Reply" },
 ];
 
 type SortOption = {
@@ -39,6 +39,8 @@ type SortOption = {
   disabled?: boolean;
 };
 
+type AccordionKey = "rating" | "reply" | "sort";
+
 export default function ReviewFilterBottomSheet({
   visible,
   onClose,
@@ -46,6 +48,9 @@ export default function ReviewFilterBottomSheet({
   currentFilters,
 }: ReviewFilterBottomSheetProps) {
   const [filters, setFilters] = useState<ReviewFilterOptions>(currentFilters);
+  const [expandedSection, setExpandedSection] = useState<AccordionKey | null>(
+    "rating",
+  );
 
   useEffect(() => {
     setFilters(currentFilters);
@@ -53,6 +58,7 @@ export default function ReviewFilterBottomSheet({
 
   const handleApply = () => {
     onApply(filters);
+    onClose();
   };
 
   const handleClearAll = () => {
@@ -71,10 +77,12 @@ export default function ReviewFilterBottomSheet({
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Determine which sort options should be disabled
+  const toggleSection = (key: AccordionKey) => {
+    setExpandedSection((prev) => (prev === key ? null : key));
+  };
+
   const getSortOptions = (): SortOption[] => {
     const hasRatingFilter = filters.rating !== null;
-
     return [
       { value: "newest", label: "Most Recent" },
       { value: "oldest", label: "Oldest First" },
@@ -93,7 +101,79 @@ export default function ReviewFilterBottomSheet({
     ];
   };
 
+  const getActiveCount = () => {
+    let count = 0;
+    if (filters.rating !== null) count++;
+    if (filters.hasReply !== null) count++;
+    if (filters.sortBy !== "newest") count++;
+    return count;
+  };
+
+  const getSectionSummary = (key: AccordionKey): string | null => {
+    switch (key) {
+      case "rating":
+        return filters.rating !== null ? `${filters.rating}★ only` : null;
+      case "reply":
+        if (filters.hasReply === null) return null;
+        return filters.hasReply ? "With Reply" : "No Reply";
+      case "sort":
+        if (filters.sortBy === "newest") return null;
+        return (
+          getSortOptions().find((s) => s.value === filters.sortBy)?.label ??
+          null
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderSectionHeader = (
+    key: AccordionKey,
+    label: string,
+    icon: string,
+  ) => {
+    const isOpen = expandedSection === key;
+    const summary = getSectionSummary(key);
+    return (
+      <TouchableOpacity
+        onPress={() => toggleSection(key)}
+        activeOpacity={0.7}
+        style={[styles.sectionHeader, isOpen && styles.sectionHeaderActive]}
+      >
+        <View style={styles.sectionHeaderLeft}>
+          <View
+            style={[styles.sectionIcon, isOpen && styles.sectionIconActive]}
+          >
+            <AntDesign
+              name={icon as any}
+              size={14}
+              color={isOpen ? "#fff" : "#64748b"}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text
+              style={[styles.sectionLabel, isOpen && styles.sectionLabelActive]}
+            >
+              {label}
+            </Text>
+            {summary && !isOpen && (
+              <Text style={styles.sectionSummary} numberOfLines={1}>
+                {summary}
+              </Text>
+            )}
+          </View>
+        </View>
+        <AntDesign
+          name={isOpen ? "up" : "down"}
+          size={12}
+          color={isOpen ? "#3b82f6" : "#94a3b8"}
+        />
+      </TouchableOpacity>
+    );
+  };
+
   const sortOptions = getSortOptions();
+  const activeCount = getActiveCount();
 
   return (
     <Modal
@@ -108,137 +188,151 @@ export default function ReviewFilterBottomSheet({
           activeOpacity={1}
           onPress={onClose}
         />
-        <View className="bg-white rounded-t-3xl" style={{ maxHeight: "85%" }}>
+        <View style={styles.sheet}>
+          {/* Handle bar */}
+          <View style={styles.handleBar} />
+
           {/* Header */}
-          <View className="flex-row justify-between items-center p-4 border-b border-gray-200">
-            <Text className="text-xl font-bold text-slate-900">
-              Filter & Sort Reviews
-            </Text>
-            <TouchableOpacity onPress={onClose}>
-              <AntDesign name="close" size={24} color="#64748b" />
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.headerTitle}>Filter & Sort</Text>
+              {activeCount > 0 && (
+                <Text style={styles.headerSubtitle}>
+                  {activeCount} filter{activeCount > 1 ? "s" : ""} active
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+              <AntDesign name="close" size={18} color="#64748b" />
             </TouchableOpacity>
           </View>
 
-          {/* Scrollable Content */}
+          {/* Accordion Sections */}
           <ScrollView
             showsVerticalScrollIndicator={false}
             style={{ flexGrow: 0 }}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingBottom: 8,
+              paddingTop: 8,
+            }}
           >
             {/* Filter by Rating */}
-            <View className="p-4 border-b border-gray-100">
-              <Text className="text-base font-semibold text-slate-900 mb-3">
-                Filter by Rating
-              </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                className="flex-row"
-              >
-                {RATING_OPTIONS.map((option) => (
-                  <TouchableOpacity
-                    key={option.label}
-                    onPress={() => updateFilter("rating", option.value)}
-                    className={`mr-2 px-4 py-2 rounded-full border ${
-                      filters.rating === option.value
-                        ? "bg-blue-500 border-blue-500"
-                        : "bg-white border-gray-300"
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-medium ${
-                        filters.rating === option.value
-                          ? "text-white"
-                          : "text-slate-700"
-                      }`}
-                    >
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+            <View style={styles.accordionItem}>
+              {renderSectionHeader("rating", "Filter by Rating", "star")}
+              {expandedSection === "rating" && (
+                <View style={styles.sectionBody}>
+                  <View style={styles.chipRow}>
+                    {RATING_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option.label}
+                        onPress={() => updateFilter("rating", option.value)}
+                        style={[
+                          styles.chip,
+                          filters.rating === option.value && styles.chipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            filters.rating === option.value &&
+                              styles.chipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
 
-            {/* Filter by Reply Status */}
-            <View className="p-4 border-b border-gray-100">
-              <Text className="text-base font-semibold text-slate-900 mb-3">
-                Review Type
-              </Text>
-              <View className="flex-row flex-wrap">
-                {REPLY_OPTIONS.map((option) => (
-                  <TouchableOpacity
-                    key={option.label}
-                    onPress={() => updateFilter("hasReply", option.value)}
-                    className={`mr-2 mb-2 px-4 py-2 rounded-full border ${
-                      filters.hasReply === option.value
-                        ? "bg-blue-500 border-blue-500"
-                        : "bg-white border-gray-300"
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-medium ${
-                        filters.hasReply === option.value
-                          ? "text-white"
-                          : "text-slate-700"
-                      }`}
-                    >
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+            {/* Review Type */}
+            <View style={styles.accordionItem}>
+              {renderSectionHeader("reply", "Review Type", "message")}
+              {expandedSection === "reply" && (
+                <View style={styles.sectionBody}>
+                  <View style={styles.chipRow}>
+                    {REPLY_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option.label}
+                        onPress={() => updateFilter("hasReply", option.value)}
+                        style={[
+                          styles.chip,
+                          filters.hasReply === option.value &&
+                            styles.chipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            filters.hasReply === option.value &&
+                              styles.chipTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* Sort By */}
-            <View className="p-4 pb-6">
-              <Text className="text-base font-semibold text-slate-900 mb-3">
-                Sort By
-              </Text>
-              {sortOptions.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  onPress={() =>
-                    !option.disabled && updateFilter("sortBy", option.value)
-                  }
-                  disabled={option.disabled}
-                  className={`flex-row items-center justify-between py-3 border-b border-gray-100 ${
-                    option.disabled ? "opacity-40" : ""
-                  }`}
-                >
-                  <View className="flex-row items-center flex-1">
-                    <Text
-                      className={`text-sm ${
-                        option.disabled ? "text-slate-400" : "text-slate-700"
-                      }`}
+            <View style={[styles.accordionItem, { marginBottom: 0 }]}>
+              {renderSectionHeader("sort", "Sort By", "swap")}
+              {expandedSection === "sort" && (
+                <View style={styles.sectionBody}>
+                  {sortOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      onPress={() =>
+                        !option.disabled && updateFilter("sortBy", option.value)
+                      }
+                      disabled={option.disabled}
+                      style={[
+                        styles.sortRow,
+                        option.disabled && styles.sortRowDisabled,
+                      ]}
                     >
-                      {option.label}
-                    </Text>
-                    {option.disabled && (
-                      <Text className="ml-2 text-xs text-slate-400">
-                        (Not available with rating filter)
-                      </Text>
-                    )}
-                  </View>
-                  {filters.sortBy === option.value && (
-                    <AntDesign name="check-circle" size={20} color="#3b82f6" />
-                  )}
-                </TouchableOpacity>
-              ))}
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            styles.sortLabel,
+                            filters.sortBy === option.value &&
+                              styles.sortLabelActive,
+                            option.disabled && styles.sortLabelDisabled,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                        {option.disabled && (
+                          <Text style={styles.sortDisabledNote}>
+                            Not available with rating filter
+                          </Text>
+                        )}
+                      </View>
+                      {filters.sortBy === option.value && !option.disabled && (
+                        <View style={styles.sortCheck}>
+                          <AntDesign name="check" size={12} color="#3b82f6" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
           </ScrollView>
 
-          {/* Footer Buttons */}
-          <View className="flex-row p-4 border-t border-gray-200 bg-white">
-            <TouchableOpacity
-              onPress={handleClearAll}
-              className="flex-1 mr-2 py-3 bg-white border border-gray-300 rounded-xl items-center"
-            >
-              <Text className="text-slate-700 font-semibold">Clear All</Text>
+          {/* Footer */}
+          <View style={styles.footer}>
+            <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn}>
+              <Text style={styles.clearBtnText}>Clear All</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleApply}
-              className="flex-1 ml-2 py-3 bg-blue-500 rounded-xl items-center"
-            >
-              <Text className="text-white font-semibold">Apply Filters</Text>
+            <TouchableOpacity onPress={handleApply} style={styles.applyBtn}>
+              <Text style={styles.applyBtnText}>Apply</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -251,7 +345,7 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
   backdropTouchable: {
     position: "absolute",
@@ -259,5 +353,196 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "88%",
+    paddingBottom: 8,
+  },
+  handleBar: {
+    width: 36,
+    height: 4,
+    backgroundColor: "#e2e8f0",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 2,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0f172a",
+    letterSpacing: 0.2,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: "#3b82f6",
+    marginTop: 1,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accordionItem: {
+    marginBottom: 8,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    backgroundColor: "#f8fafc",
+  },
+  sectionHeaderActive: {
+    backgroundColor: "#eff6ff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#dbeafe",
+  },
+  sectionHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: 10,
+  },
+  sectionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionIconActive: {
+    backgroundColor: "#3b82f6",
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#334155",
+  },
+  sectionLabelActive: {
+    color: "#1d4ed8",
+  },
+  sectionSummary: {
+    fontSize: 11,
+    color: "#3b82f6",
+    marginTop: 1,
+  },
+  sectionBody: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 5.5,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
+  },
+  chipActive: {
+    backgroundColor: "#3b82f6",
+    borderColor: "#3b82f6",
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#475569",
+  },
+  chipTextActive: {
+    color: "#fff",
+  },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  sortRowDisabled: {
+    opacity: 0.4,
+  },
+  sortLabel: {
+    fontSize: 14,
+    color: "#475569",
+  },
+  sortLabelActive: {
+    color: "#1d4ed8",
+    fontWeight: "600",
+  },
+  sortLabelDisabled: {
+    color: "#94a3b8",
+  },
+  sortDisabledNote: {
+    fontSize: 11,
+    color: "#94a3b8",
+    marginTop: 2,
+  },
+  sortCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  footer: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    gap: 10,
+  },
+  clearBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    alignItems: "center",
+  },
+  clearBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748b",
+  },
+  applyBtn: {
+    flex: 2,
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#3b82f6",
+    alignItems: "center",
+  },
+  applyBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
   },
 });

@@ -1,11 +1,10 @@
 // lib/components/AddCommentModal.tsx
-import { AntDesign } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
     Modal,
-    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -33,32 +32,29 @@ export default function AddCommentModal({
 }: AddCommentModalProps) {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!visible) {
       setContent("");
+    } else {
+      // Auto focus after sheet animates in
+      setTimeout(() => inputRef.current?.focus(), 200);
     }
   }, [visible]);
 
   const handleSubmit = async () => {
-    if (!content.trim()) {
-      Alert.alert("Error", "Comment cannot be empty");
-      return;
-    }
-
+    if (!content.trim()) return;
     try {
       setSubmitting(true);
-
       await createComment({
         service_id: serviceId,
         content: content.trim(),
         parent_comment_id: replyingTo?.id,
       });
-
       onSubmit();
       handleClose();
     } catch (error: any) {
-      console.error("Error submitting comment:", error);
       Alert.alert("Error", error.message || "Failed to submit comment");
     } finally {
       setSubmitting(false);
@@ -71,10 +67,12 @@ export default function AddCommentModal({
   };
 
   const replyingToName = replyingTo?.profile?.first_name
-    ? `${replyingTo.profile.first_name} ${
-        replyingTo.profile.last_name || ""
-      }`.trim()
+    ? `${replyingTo.profile.first_name} ${replyingTo.profile.last_name || ""}`.trim()
     : "Anonymous";
+
+  const isReply = !!replyingTo;
+  const charLimit = 500;
+  const canSubmit = content.trim().length > 0 && !submitting;
 
   return (
     <Modal
@@ -85,80 +83,111 @@ export default function AddCommentModal({
     >
       <View style={styles.backdrop}>
         <TouchableOpacity
-          style={styles.backdropTouchable}
+          style={styles.backdropTouch}
           activeOpacity={1}
           onPress={handleClose}
         />
         <KeyboardAvoidingView
           behavior="padding"
-          style={styles.modalContainer}
+          style={styles.kavWrap}
           keyboardVerticalOffset={28}
         >
-          <View
-            className="bg-white rounded-t-3xl"
-            style={styles.contentContainer}
-          >
+          <View style={styles.sheet}>
+            {/* Handle */}
+            <View style={styles.handle} />
+
             {/* Header */}
-            <View className="flex-row justify-between items-center p-4 border-b border-gray-200">
-              <Text className="text-xl font-bold text-slate-900">
-                {replyingTo ? `Replying to @${replyingToName}` : "Add Comment"}
-              </Text>
-              <TouchableOpacity onPress={handleClose}>
-                <AntDesign name="close" size={24} color="#64748b" />
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                <View
+                  style={[styles.headerIcon, isReply && styles.headerIconReply]}
+                >
+                  <Ionicons
+                    name={
+                      isReply ? "return-down-forward" : "chatbubble-ellipses"
+                    }
+                    size={16}
+                    color={isReply ? "#8b5cf6" : "#3b82f6"}
+                  />
+                </View>
+                <View>
+                  <Text style={styles.headerTitle}>
+                    {isReply ? "Reply to comment" : "Add a comment"}
+                  </Text>
+                  {isReply && (
+                    <Text style={styles.replyingToLabel}>
+                      @{replyingToName}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+                <AntDesign name="close" size={17} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            {/* Content - Wrapped in ScrollView for keyboard */}
-            <ScrollView
-              style={styles.scrollView}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              <View className="p-4">
-                <TextInput
-                  value={content}
-                  onChangeText={setContent}
-                  placeholder={
-                    replyingTo ? "Write your reply..." : "Write a comment..."
-                  }
-                  multiline
-                  autoFocus
-                  maxLength={500}
-                  className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-                  style={{ minHeight: 120, textAlignVertical: "top" }}
-                />
-                <Text className="text-xs text-slate-500 mt-2 text-right">
-                  {content.length}/500 characters
+            {/* Quoted original comment (when replying) */}
+            {isReply && replyingTo?.content && (
+              <View style={styles.quotedComment}>
+                <View style={styles.quoteLine} />
+                <Text style={styles.quotedText} numberOfLines={2}>
+                  {replyingTo.content}
                 </Text>
               </View>
-            </ScrollView>
+            )}
+
+            {/* Input */}
+            <View style={styles.inputSection}>
+              <TextInput
+                ref={inputRef}
+                value={content}
+                onChangeText={setContent}
+                placeholder={
+                  isReply
+                    ? `Reply to @${replyingToName}…`
+                    : "Share your thoughts…"
+                }
+                placeholderTextColor="#94a3b8"
+                multiline
+                maxLength={charLimit}
+                style={styles.input}
+                textAlignVertical="top"
+              />
+              <Text
+                style={[
+                  styles.charCount,
+                  content.length > charLimit * 0.9 && styles.charCountWarn,
+                ]}
+              >
+                {content.length} / {charLimit}
+              </Text>
+            </View>
 
             {/* Footer */}
-            <View className="flex-row p-4 border-t border-gray-200">
-              <TouchableOpacity
-                onPress={handleClose}
-                className="flex-1 mr-2 py-3 bg-white border border-gray-300 rounded-xl items-center"
-              >
-                <Text className="text-slate-700 font-semibold">Cancel</Text>
+            <View style={styles.footer}>
+              <TouchableOpacity onPress={handleClose} style={styles.cancelBtn}>
+                <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleSubmit}
-                disabled={submitting || !content.trim()}
-                className={`flex-1 ml-2 py-3 rounded-xl items-center ${
-                  submitting || !content.trim() ? "bg-slate-300" : "bg-blue-500"
-                }`}
+                disabled={!canSubmit}
+                style={[
+                  styles.submitBtn,
+                  !canSubmit && styles.submitBtnDisabled,
+                  isReply && styles.submitBtnReply,
+                  isReply && !canSubmit && styles.submitBtnDisabled,
+                ]}
               >
                 {submitting ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+                  <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text
-                    className={`font-semibold ${
-                      submitting || !content.trim()
-                        ? "text-slate-500"
-                        : "text-white"
-                    }`}
+                    style={[
+                      styles.submitText,
+                      !canSubmit && styles.submitTextDisabled,
+                    ]}
                   >
-                    {replyingTo ? "Post Reply" : "Post Comment"}
+                    {isReply ? "Post Reply" : "Post Comment"}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -174,22 +203,162 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
-  backdropTouchable: {
+  backdropTouch: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
   },
-  modalContainer: {
-    maxHeight: "90%",
+  kavWrap: { maxHeight: "85%" },
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
-  contentContainer: {
-    maxHeight: "100%",
+  handle: {
+    width: 36,
+    height: 4,
+    backgroundColor: "#e2e8f0",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 4,
   },
-  scrollView: {
-    flexGrow: 0,
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIconReply: {
+    backgroundColor: "#f5f3ff",
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  replyingToLabel: {
+    fontSize: 12,
+    color: "#8b5cf6",
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  closeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quotedComment: {
+    flexDirection: "row",
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    overflow: "hidden",
+    padding: 10,
+  },
+  quoteLine: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: "#8b5cf6",
+    marginRight: 10,
+  },
+  quotedText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#64748b",
+    lineHeight: 18,
+    fontStyle: "italic",
+  },
+  inputSection: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  input: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#0f172a",
+    minHeight: 100,
+    lineHeight: 20,
+  },
+  charCount: {
+    fontSize: 11,
+    color: "#94a3b8",
+    textAlign: "right",
+    marginTop: 6,
+  },
+  charCountWarn: {
+    color: "#f97316",
+  },
+  footer: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    gap: 10,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+  },
+  cancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748b",
+  },
+  submitBtn: {
+    flex: 2,
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#3b82f6",
+    alignItems: "center",
+  },
+  submitBtnReply: {
+    backgroundColor: "#7c3aed",
+  },
+  submitBtnDisabled: {
+    backgroundColor: "#e2e8f0",
+  },
+  submitText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  submitTextDisabled: {
+    color: "#94a3b8",
   },
 });

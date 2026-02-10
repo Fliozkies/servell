@@ -15,7 +15,6 @@ export default function ServellApp() {
   const [activeTab, setActiveTab] = useState<PageName>("Services");
   const insets = useSafeAreaInsets();
 
-  // Search and Filter states - managed at app level for header
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({
@@ -26,49 +25,45 @@ export default function ServellApp() {
     sortBy: "newest",
   });
 
-  // Count active filters for header indicator
-  const getActiveFilterCount = () => {
-    let count = 0;
-    if (filters.categoryId) count++;
-    if (filters.priceRange.min !== null || filters.priceRange.max !== null)
-      count++;
-    if (filters.minRating) count++;
-    if (filters.location) count++;
-    if (filters.sortBy !== "newest") count++;
-    return count;
-  };
+  const hasActiveFilters =
+    filters.categoryId !== null ||
+    filters.priceRange.min !== null ||
+    filters.priceRange.max !== null ||
+    filters.minRating !== null ||
+    (filters.location && filters.location.trim() !== "") ||
+    filters.sortBy !== "newest";
 
-  const activeFilterCount = getActiveFilterCount();
-  const hasActiveFilters = activeFilterCount > 0;
-
-  // Handle when a service is created
   const handleServiceCreated = () => {
-    setActiveTab("Services"); // Go back to home/services tab
-    // The ServicesContent component will auto-refresh on mount
+    setActiveTab("Services");
   };
 
-  // Handle cancel button in create service
   const handleCreateCancel = () => {
     setActiveTab("Services");
   };
 
   return (
     <View className="bg-slate-50 flex-1">
-      {/**Header - Show only on Services tab */}
+      {/* Header — only on Services tab */}
       {activeTab === "Services" && (
         <ServicesHeader
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onFilterPress={() => setFilterModalVisible(true)}
           insets={insets}
-          activeFilterCount={activeFilterCount}
-          hasActiveFilters={hasActiveFilters}
+          hasActiveFilters={!!hasActiveFilters}
         />
       )}
 
-      {/* Main Content Area */}
+      {/* Main Content — Services and Message are persistent (never unmounted).
+          This means they load only once and keep their state across tab switches. */}
       <View className="flex-1">
-        {activeTab === "Services" && (
+        {/* Services — always mounted, hidden when not active */}
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "Services" ? "flex" : "none",
+          }}
+        >
           <ServicesContent
             searchQuery={searchQuery}
             filterModalVisible={filterModalVisible}
@@ -76,23 +71,29 @@ export default function ServellApp() {
             filters={filters}
             onFiltersChange={setFilters}
           />
-        )}
+        </View>
 
+        {/* Messages (Conversations) — always mounted, real-time subscription stays alive */}
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "Message" ? "flex" : "none",
+          }}
+        >
+          <ConversationsScreen />
+        </View>
+
+        {/* Tabs that are fine to mount/unmount per navigation */}
         {activeTab === "Notification" && <NotificationScreen />}
-
-        {activeTab === "Message" && <ConversationsScreen />}
-
         {activeTab === "Post" && (
           <CreateService
             onServiceCreated={handleServiceCreated}
             onCancel={handleCreateCancel}
           />
         )}
-
         {activeTab === "Profile" && <Profile />}
       </View>
 
-      {/* Bottom Navigation - Hide when creating service */}
       {activeTab !== "Post" && (
         <BottomNav currentTab={activeTab} onTabPress={setActiveTab} />
       )}

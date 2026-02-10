@@ -1,6 +1,6 @@
 // lib/components/service-tabs/CommentsTab.tsx
 import { AntDesign } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -42,6 +42,10 @@ export default function CommentsTab({
   const [addCommentVisible, setAddCommentVisible] = useState(false);
   const [replyingTo, setReplyingTo] = useState<CommentWithDetails | null>(null);
 
+  // Cache flag — only load once on first mount, unless manually refreshed
+  const hasLoadedRef = useRef(false);
+  const isFirstSortRender = useRef(true);
+
   const loadComments = useCallback(
     async (pageNum: number, shouldRefresh: boolean = false) => {
       try {
@@ -75,9 +79,22 @@ export default function CommentsTab({
     [service.id, sortBy],
   );
 
+  // Load only once on first mount (cache behavior)
   useEffect(() => {
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      loadComments(0);
+    }
+  }); // Empty deps — intentional one-time load
+
+  // Re-load when sort changes (user explicitly changed sort)
+  useEffect(() => {
+    if (isFirstSortRender.current) {
+      isFirstSortRender.current = false;
+      return;
+    }
     loadComments(0);
-  }, [loadComments]);
+  }, [sortBy, loadComments]);
 
   const handleRefresh = () => {
     setPage(0);

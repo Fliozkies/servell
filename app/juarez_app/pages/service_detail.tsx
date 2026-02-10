@@ -75,13 +75,8 @@ export default function ServiceDetail() {
     getCurrentUser();
   }, [loadService, getCurrentUser]);
 
-  // NEW: Refresh service data when switching to overview tab
-  useEffect(() => {
-    if (activeTab === "overview" && service) {
-      // Silently refresh the service data to get updated ratings
-      loadService(true);
-    }
-  }, [activeTab, loadService, service]);
+  // Service data is loaded once on mount.
+  // Child tabs call onServiceUpdate() after a review is submitted to silently refresh.
 
   const handleStartChat = async () => {
     if (!service || !currentUserId) {
@@ -222,24 +217,42 @@ export default function ServiceDetail() {
         </View>
       </View>
 
-      {/* Tab Content - MODIFIED: Pass onServiceUpdate to ReviewsTab */}
+      {/* Tab Content — all tabs are mounted at once; inactive ones are hidden.
+           This prevents re-fetching when switching between tabs. */}
       <View className="flex-1">
-        {activeTab === "overview" && <OverviewTab service={service} />}
-        {activeTab === "reviews" && (
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "overview" ? "flex" : "none",
+          }}
+        >
+          <OverviewTab service={service} />
+        </View>
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "reviews" ? "flex" : "none",
+          }}
+        >
           <ReviewsTab
             service={service}
             currentUserId={currentUserId}
             isOwnService={isOwnService}
-            onServiceUpdate={handleServiceUpdate} // NEW: Pass callback
+            onServiceUpdate={handleServiceUpdate}
           />
-        )}
-        {activeTab === "comments" && (
+        </View>
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "comments" ? "flex" : "none",
+          }}
+        >
           <CommentsTab
             service={service}
             currentUserId={currentUserId}
             isOwnService={isOwnService}
           />
-        )}
+        </View>
       </View>
 
       {/* Bottom Action Buttons */}

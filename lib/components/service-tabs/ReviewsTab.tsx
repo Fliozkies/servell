@@ -1,17 +1,19 @@
 // lib/components/service-tabs/ReviewsTab.tsx
 import { AntDesign } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
     FlatList,
     RefreshControl,
+    StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from "react-native";
 import {
     canUserReviewService,
+    deleteReview,
     fetchServiceReviews,
     getUserReviewForService,
 } from "../../api/reviews.api";
@@ -28,14 +30,14 @@ type ReviewsTabProps = {
   service: ServiceWithDetails;
   currentUserId: string | null;
   isOwnService: boolean;
-  onServiceUpdate?: () => void; // NEW: Callback to refresh service data
+  onServiceUpdate?: () => void;
 };
 
 export default function ReviewsTab({
   service,
   currentUserId,
   isOwnService,
-  onServiceUpdate, // NEW
+  onServiceUpdate,
 }: ReviewsTabProps) {
   const [reviews, setReviews] = useState<ReviewWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,12 +51,15 @@ export default function ReviewsTab({
   const [writeReviewVisible, setWriteReviewVisible] = useState(false);
   const [editingReview, setEditingReview] = useState<ReviewWithDetails | null>(
     null,
-  ); // NEW
+  );
   const [filters, setFilters] = useState<ReviewFilterOptions>({
     rating: null,
     hasReply: null,
     sortBy: "newest",
   });
+
+  // Cache flag — only load once on first mount, unless manually refreshed
+  const hasLoadedRef = useRef(false);
 
   const loadReviews = useCallback(
     async (pageNum: number, shouldRefresh: boolean = false) => {
@@ -75,7 +80,7 @@ export default function ReviewsTab({
           setReviews((prev) => [...prev, ...data]);
         }
 
-        setHasMore(data.length === 10); // 10 is REVIEWS_PER_PAGE
+        setHasMore(data.length === 10);
         setPage(pageNum);
       } catch (error) {
         console.error("Error loading reviews:", error);
@@ -104,15 +109,30 @@ export default function ReviewsTab({
     }
   }, [currentUserId, isOwnService, service.id]);
 
+  // Load only once on first mount (cache behavior)
   useEffect(() => {
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      loadReviews(0);
+      checkReviewEligibility();
+    }
+  }); // Empty deps — intentional one-time load
+
+  // Re-load when filters change (user explicitly changed filters)
+  const isFirstFilterRender = useRef(true);
+  useEffect(() => {
+    if (isFirstFilterRender.current) {
+      isFirstFilterRender.current = false;
+      return;
+    }
     loadReviews(0);
-    checkReviewEligibility();
-  }, [loadReviews, checkReviewEligibility]);
+  }, [filters, loadReviews]);
 
   const handleRefresh = () => {
     setPage(0);
     setHasMore(true);
     loadReviews(0, true);
+    checkReviewEligibility();
   };
 
   const handleLoadMore = () => {
@@ -126,38 +146,56 @@ export default function ReviewsTab({
     setPage(0);
     setHasMore(true);
     setFilterModalVisible(false);
-    // Reload with new filters
-    setTimeout(() => loadReviews(0), 100);
   };
 
   const handleReviewSubmitted = () => {
     setWriteReviewVisible(false);
-    setEditingReview(null); // NEW: Clear editing state
+    setEditingReview(null);
     handleRefresh();
-    checkReviewEligibility();
-    // NEW: Notify parent to refresh service data
     if (onServiceUpdate) {
       onServiceUpdate();
     }
   };
 
-  // NEW: Handle edit review
   const handleEditReview = (review: ReviewWithDetails) => {
     setEditingReview(review);
     setWriteReviewVisible(true);
   };
 
+  // Delete handler for "Your Review" section
+  const handleDeleteUserReview = () => {
+    if (!userReview) return;
+    Alert.alert(
+      "Delete Review",
+      "Are you sure you want to delete your review?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteReview(userReview.id);
+              Alert.alert("Success", "Review deleted successfully");
+              handleRefresh();
+              if (onServiceUpdate) onServiceUpdate();
+            } catch (error) {
+              console.error("Error deleting review:", error);
+              Alert.alert("Error", "Failed to delete review");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const getFilterButtonText = () => {
     const parts: string[] = [];
-
-    if (filters.rating) {
-      parts.push(`${filters.rating}★`);
-    }
+    if (filters.rating) parts.push(`${filters.rating}★`);
     if (filters.hasReply !== null) {
       parts.push(filters.hasReply ? "With Reply" : "No Reply");
     }
-
-    const sortLabels = {
+    const sortLabels: Record<string, string> = {
       newest: "Most Recent",
       oldest: "Oldest",
       most_helpful: "Most Helpful",
@@ -165,14 +203,15 @@ export default function ReviewsTab({
       highest_rating: "Highest Rating",
       lowest_rating: "Lowest Rating",
     };
-
     const sortText = sortLabels[filters.sortBy];
-
-    if (parts.length > 0) {
-      return `${parts.join(" • ")} • ${sortText}`;
-    }
+    if (parts.length > 0) return `${parts.join(" • ")} • ${sortText}`;
     return `Sort: ${sortText}`;
   };
+
+  const hasActiveFilters =
+    filters.rating !== null ||
+    filters.hasReply !== null ||
+    filters.sortBy !== "newest";
 
   const renderHeader = () => (
     <View className="bg-slate-50">
@@ -180,15 +219,28 @@ export default function ReviewsTab({
       <View className="p-4 bg-white border-b border-slate-200">
         <TouchableOpacity
           onPress={() => setFilterModalVisible(true)}
-          className="flex-row items-center justify-between bg-slate-100 px-4 py-3 rounded-xl"
+          style={[styles.filterBtn, hasActiveFilters && styles.filterBtnActive]}
         >
           <View className="flex-row items-center">
-            <AntDesign name="filter" size={16} color="#64748b" />
-            <Text className="ml-2 text-sm text-slate-700">
+            <AntDesign
+              name="filter"
+              size={15}
+              color={hasActiveFilters ? "#3b82f6" : "#64748b"}
+            />
+            <Text
+              style={[
+                styles.filterBtnText,
+                hasActiveFilters && styles.filterBtnTextActive,
+              ]}
+            >
               {getFilterButtonText()}
             </Text>
           </View>
-          <AntDesign name="down" size={12} color="#64748b" />
+          <AntDesign
+            name="down"
+            size={11}
+            color={hasActiveFilters ? "#3b82f6" : "#94a3b8"}
+          />
         </TouchableOpacity>
       </View>
 
@@ -197,7 +249,7 @@ export default function ReviewsTab({
         <View className="p-4 bg-white border-b border-slate-200">
           <TouchableOpacity
             onPress={() => {
-              setEditingReview(null); // NEW: Clear editing state
+              setEditingReview(null);
               setWriteReviewVisible(true);
             }}
             className="bg-blue-500 py-3 rounded-xl flex-row items-center justify-center"
@@ -210,29 +262,43 @@ export default function ReviewsTab({
         </View>
       )}
 
-      {/* User's existing review with EDIT button */}
+      {/* Your Review Card */}
       {userReview && (
-        <View className="p-4 bg-white border-b border-slate-200">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-sm font-semibold text-slate-600">
-              Your Review
-            </Text>
-            {/* NEW: Edit button for user's own review */}
-            <TouchableOpacity
-              onPress={() => handleEditReview(userReview)}
-              className="px-3 py-1 rounded-full bg-blue-50"
-            >
-              <Text className="text-xs font-medium text-blue-600">Edit</Text>
-            </TouchableOpacity>
+        <View style={styles.yourReviewCard}>
+          {/* Your Review Header */}
+          <View style={styles.yourReviewHeader}>
+            <View style={styles.yourReviewLabelRow}>
+              <View style={styles.yourReviewDot} />
+              <Text style={styles.yourReviewLabel}>Your Review</Text>
+            </View>
+            {/* Edit & Delete buttons side by side */}
+            <View style={styles.yourReviewActions}>
+              <TouchableOpacity
+                onPress={() => handleEditReview(userReview)}
+                style={styles.editBtn}
+              >
+                <AntDesign name="edit" size={13} color="#3b82f6" />
+                <Text style={styles.editBtnText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleDeleteUserReview}
+                style={styles.deleteBtn}
+              >
+                <AntDesign name="delete" size={13} color="#ef4444" />
+                <Text style={styles.deleteBtnText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Review content — no Edit/Delete inside the card */}
           <ReviewItem
             review={userReview}
             currentUserId={currentUserId}
             isOwnService={isOwnService}
             serviceProviderId={service.user_id}
             onUpdate={handleRefresh}
-            onEdit={handleEditReview} // NEW: Pass edit callback
             isUserReview={true}
+            hideActions={true}
           />
         </View>
       )}
@@ -286,7 +352,7 @@ export default function ReviewsTab({
             isOwnService={isOwnService}
             serviceProviderId={service.user_id}
             onUpdate={handleRefresh}
-            onEdit={handleEditReview} // NEW: Pass edit callback
+            hideActions={true}
           />
         )}
         ListHeaderComponent={renderHeader}
@@ -305,7 +371,6 @@ export default function ReviewsTab({
         contentContainerStyle={{ flexGrow: 1 }}
       />
 
-      {/* Filter Bottom Sheet */}
       <ReviewFilterBottomSheet
         visible={filterModalVisible}
         onClose={() => setFilterModalVisible(false)}
@@ -313,17 +378,111 @@ export default function ReviewsTab({
         currentFilters={filters}
       />
 
-      {/* Write/Edit Review Modal - MODIFIED to handle editing */}
       <WriteReviewModal
         visible={writeReviewVisible}
         onClose={() => {
           setWriteReviewVisible(false);
-          setEditingReview(null); // NEW: Clear editing state
+          setEditingReview(null);
         }}
         serviceId={service.id}
         onSubmit={handleReviewSubmitted}
-        existingReview={editingReview || userReview} // NEW: Use editingReview if set
+        existingReview={editingReview || userReview}
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  filterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  filterBtnActive: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+  },
+  filterBtnText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: "#475569",
+    fontWeight: "500",
+  },
+  filterBtnTextActive: {
+    color: "#2563eb",
+  },
+  yourReviewCard: {
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    marginBottom: 0,
+  },
+  yourReviewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+  },
+  yourReviewLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  yourReviewDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#3b82f6",
+  },
+  yourReviewLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1e3a5f",
+    letterSpacing: 0.2,
+  },
+  yourReviewActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  editBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  editBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#3b82f6",
+  },
+  deleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#fff1f2",
+    borderWidth: 1,
+    borderColor: "#fecdd3",
+  },
+  deleteBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#ef4444",
+  },
+});

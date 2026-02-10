@@ -31,14 +31,14 @@ export default function ServicesHeader({
       className="bg-white px-6 py-4"
       style={{ paddingTop: insets.top + 16 }}
     >
-      {/* Title and Search Bar in Same Row */}
       <View className="flex-row items-center justify-between">
-        {/* Servell Title */}
         <Text className="font-bold text-slate-900 text-3xl">Servell</Text>
 
-        {/* Search Bar with Integrated Filter */}
+        {/* Search + Filter row */}
         <View
-          className={`flex-1 ml-4 flex-row items-center bg-slate-50 rounded-2xl px-3`}
+          className={`flex-1 ml-4 flex-row items-center rounded-2xl px-3 ${
+            isFocused ? "bg-blue-50" : "bg-slate-50"
+          }`}
         >
           <AntDesign
             name="search"
@@ -61,26 +61,18 @@ export default function ServicesHeader({
             </TouchableOpacity>
           )}
 
-          {/* Filter Button - Integrated in Search Bar */}
-          <View className="pl-2 ml-1 border-l border-gray-300">
+          {/* Filter icon — blue when active, no badge */}
+          <View className="pl-2 ml-1 border-l border-gray-200">
             <TouchableOpacity
               onPress={onFilterPress}
-              className="p-1.5 relative"
+              className="p-1.5"
               activeOpacity={0.6}
             >
               <AntDesign
                 name="filter"
                 size={18}
-                color={hasActiveFilters ? "#3b82f6" : "#64748b"}
+                color={hasActiveFilters ? "#3b82f6" : "#94a3b8"}
               />
-              {/* Active Filter Indicator Badge */}
-              {activeFilterCount > 0 && (
-                <View className="absolute -top-1 -right-1 bg-blue-500 rounded-full min-w-[14px] h-3.5 items-center justify-center px-1">
-                  <Text className="text-white text-[9px] font-bold">
-                    {activeFilterCount}
-                  </Text>
-                </View>
-              )}
             </TouchableOpacity>
           </View>
         </View>
