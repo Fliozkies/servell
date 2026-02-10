@@ -36,6 +36,7 @@ const Item = ({
     onPress={() => router.push(`/juarez_app/pages/service_detail?id=${id}`)}
     style={{ width: columnWidth }}
     className="bg-white rounded-3xl mb-4 overflow-hidden border border-[#E9ECEF]"
+    activeOpacity={0.85}
   >
     {/* Image Container */}
     <View>
@@ -49,57 +50,50 @@ const Item = ({
         // Placeholder for services without images
         <View
           style={{ height: 140 }}
-          className="w-full bg-slate-200 items-center justify-center"
+          className="w-full bg-slate-100 items-center justify-center"
         >
-          <AntDesign name="picture" size={40} color="#94a3b8" />
+          <AntDesign name="picture" size={36} color="#cbd5e1" />
         </View>
       )}
 
-      {/* Service Badge */}
-      <View className="absolute top-2 right-2 bg-white/70 px-2 py-0.5 rounded-3xl">
-        <Text className="text-[10px] font-bold tracking-tight">SERVICE</Text>
+      {/* Rating Badge — overlaid on image bottom-left */}
+      <View className="absolute bottom-2 left-2 bg-black/50 px-2 py-0.5 rounded-full flex-row items-center">
+        <AntDesign name="star" size={10} color="#FCC419" />
+        <Text className="text-white text-[10px] font-bold ml-1">
+          {rating.toFixed(1)}
+          {reviewCount > 0 ? ` (${reviewCount})` : ""}
+        </Text>
       </View>
     </View>
 
     {/* Content Area */}
-    <View className="p-3">
-      {/* Category and Rating */}
-      <View className="flex">
-        <Text className="text-[#868E96] text-[12px]">{category}</Text>
-        <View className="flex-row items-center">
-          <AntDesign name="star" size={12} color="#FCC419" />
-          <Text className="ml-1 text-[12px] font-bold text-[#212529]">
-            {rating.toFixed(1)}
-          </Text>
-          {reviewCount > 0 && (
-            <Text className="ml-1 text-[10px] text-[#868E96]">
-              ({reviewCount})
-            </Text>
-          )}
-        </View>
-      </View>
+    <View className="p-3 pt-2.5">
+      {/* Category */}
+      <Text className="text-[#868E96] text-[11px] mb-0.5" numberOfLines={1}>
+        {category}
+      </Text>
 
-      {/* Title - Truncated for Grid Consistency */}
+      {/* Title */}
       <Text
-        className="text-[14px] font-bold text-[#212529] mb-3"
-        numberOfLines={1}
+        className="text-[13px] font-bold text-[#212529] mb-2"
+        numberOfLines={2}
       >
         {title}
       </Text>
 
-      {/* Footer */}
-      <View className="flex-row justify-between items-center">
+      {/* Footer: price on its own line, author below */}
+      <View>
         {price !== null ? (
-          <Text className="text-[18px] font-black text-[#212529]">
+          <Text className="text-[16px] font-black text-[#212529] leading-tight">
             ₱{price.toLocaleString()}
           </Text>
         ) : (
-          <Text className="text-[14px] font-semibold text-[#868E96]">
+          <Text className="text-[12px] font-semibold text-[#1877F2]">
             Contact for price
           </Text>
         )}
-        <Text className="text-[#ADB5BD] text-[11px]" numberOfLines={1}>
-          {author}
+        <Text className="text-[#ADB5BD] text-[10px] mt-0.5" numberOfLines={1}>
+          by {author}
         </Text>
       </View>
     </View>

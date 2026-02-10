@@ -1,4 +1,13 @@
-import { useState } from "react";
+import {
+  fetchConversations,
+  subscribeToConversations,
+} from "@/lib/api/messaging.api";
+import {
+  getUnreadNotificationCount,
+  subscribeToNotifications,
+} from "@/lib/api/notifications.api";
+import { supabase } from "@/lib/api/supabase";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ServicesHeader from "../../../lib/components/ServicesHeader";
@@ -15,6 +24,7 @@ export default function ServellApp() {
   const [activeTab, setActiveTab] = useState<PageName>("Services");
   const insets = useSafeAreaInsets();
 
+  // ── Search / filter state for Services tab ───────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({
@@ -25,6 +35,11 @@ export default function ServellApp() {
     sortBy: "newest",
   });
 
+  // ── Badge counts ──────────────────────────────────────────────────────────
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const userIdRef = useRef<string | null>(null);
+
   const hasActiveFilters =
     filters.categoryId !== null ||
     filters.priceRange.min !== null ||
@@ -32,6 +47,70 @@ export default function ServellApp() {
     filters.minRating !== null ||
     (filters.location && filters.location.trim() !== "") ||
     filters.sortBy !== "newest";
+
+  // ── Initialise badge counts and set up realtime listeners ─────────────────
+  useEffect(() => {
+    let unsubNotifs: (() => void) | null = null;
+    let unsubConvos: (() => void) | null = null;
+
+    async function init() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+      userIdRef.current = user.id;
+
+      // ── Initial unread message count ──────────────────────────────────────
+      const conversations = await fetchConversations();
+      const totalUnread = conversations.reduce(
+        (sum, c) => sum + (c.unread_count || 0),
+        0,
+      );
+      setUnreadMessages(totalUnread);
+
+      // ── Initial unread notification count ────────────────────────────────
+      const notifCount = await getUnreadNotificationCount();
+      setUnreadNotifications(notifCount);
+
+      // ── Realtime: new message → re-total unread count ─────────────────────
+      unsubConvos = subscribeToConversations(user.id, async () => {
+        const updated = await fetchConversations();
+        const total = updated.reduce(
+          (sum, c) => sum + (c.unread_count || 0),
+          0,
+        );
+        setUnreadMessages(total);
+      });
+
+      // ── Realtime: new notification → increment badge ──────────────────────
+      unsubNotifs = subscribeToNotifications(user.id, () => {
+        setUnreadNotifications((prev) => prev + 1);
+      });
+    }
+
+    init();
+
+    return () => {
+      unsubNotifs?.();
+      unsubConvos?.();
+    };
+  }, []);
+
+  // ── When the user opens the Message tab, re-fetch to refresh badge ────────
+  useEffect(() => {
+    if (activeTab === "Message") {
+      fetchConversations().then((convos) => {
+        const total = convos.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+        setUnreadMessages(total);
+      });
+    }
+  }, [activeTab]);
+
+  // ── Expose a reset so Notification screen can clear the badge ────────────
+  const handleNotificationTabReset = () => {
+    setUnreadNotifications(0);
+  };
 
   const handleServiceCreated = () => {
     setActiveTab("Services");
@@ -54,10 +133,9 @@ export default function ServellApp() {
         />
       )}
 
-      {/* Main Content — Services and Message are persistent (never unmounted).
-          This means they load only once and keep their state across tab switches. */}
+      {/* Main Content */}
       <View className="flex-1">
-        {/* Services — always mounted, hidden when not active */}
+        {/* Services — always mounted */}
         <View
           style={{
             flex: 1,
@@ -73,7 +151,7 @@ export default function ServellApp() {
           />
         </View>
 
-        {/* Messages (Conversations) — always mounted, real-time subscription stays alive */}
+        {/* Messages — always mounted so realtime subscription stays alive */}
         <View
           style={{
             flex: 1,
@@ -83,19 +161,42 @@ export default function ServellApp() {
           <ConversationsScreen />
         </View>
 
-        {/* Tabs that are fine to mount/unmount per navigation */}
-        {activeTab === "Notification" && <NotificationScreen />}
+        {/* Notification — always mounted so data isn't re-fetched on every visit */}
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "Notification" ? "flex" : "none",
+          }}
+        >
+          <NotificationScreen onAllRead={handleNotificationTabReset} />
+        </View>
+
+        {/* Profile — always mounted so data isn't re-fetched on every visit */}
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "Profile" ? "flex" : "none",
+          }}
+        >
+          <Profile />
+        </View>
+
+        {/* Post — mount/unmount is fine; it's a form screen */}
         {activeTab === "Post" && (
           <CreateService
             onServiceCreated={handleServiceCreated}
             onCancel={handleCreateCancel}
           />
         )}
-        {activeTab === "Profile" && <Profile />}
       </View>
 
       {activeTab !== "Post" && (
-        <BottomNav currentTab={activeTab} onTabPress={setActiveTab} />
+        <BottomNav
+          currentTab={activeTab}
+          onTabPress={setActiveTab}
+          unreadMessages={unreadMessages}
+          unreadNotifications={unreadNotifications}
+        />
       )}
     </View>
   );

@@ -38,7 +38,6 @@ export default function CommentsTab({
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [sortBy, setSortBy] = useState<CommentSortOption>("newest");
-  const [sortDropdownVisible, setSortDropdownVisible] = useState(false);
   const [addCommentVisible, setAddCommentVisible] = useState(false);
   const [replyingTo, setReplyingTo] = useState<CommentWithDetails | null>(null);
 
@@ -110,7 +109,6 @@ export default function CommentsTab({
 
   const handleSortChange = (newSort: CommentSortOption) => {
     setSortBy(newSort);
-    setSortDropdownVisible(false);
     setPage(0);
     setHasMore(true);
     // Reload with new sort
@@ -141,79 +139,51 @@ export default function CommentsTab({
     handleRefresh();
   };
 
-  const getSortLabel = () => {
-    const labels = {
-      newest: "Most Recent",
-      oldest: "Oldest First",
-      most_liked: "Most Liked",
-    };
-    return labels[sortBy];
-  };
-
   const renderHeader = () => (
-    <View className="bg-white">
-      {/* Sort Dropdown */}
-      <View className="p-4 border-b border-slate-200">
-        <TouchableOpacity
-          onPress={() => setSortDropdownVisible(!sortDropdownVisible)}
-          className="flex-row items-center justify-between"
-        >
-          <Text className="text-sm text-slate-600">Sort by:</Text>
-          <View className="flex-row items-center">
-            <Text className="text-sm font-semibold text-slate-900 mr-2">
-              {getSortLabel()}
-            </Text>
-            <AntDesign
-              name={sortDropdownVisible ? "up" : "down"}
-              size={12}
-              color="#64748b"
-            />
-          </View>
-        </TouchableOpacity>
+    <View className="bg-white border-b border-slate-100">
+      {/* Add Comment bar */}
+      <TouchableOpacity
+        onPress={handleAddComment}
+        activeOpacity={0.75}
+        className="mx-4 mt-4 mb-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex-row items-center"
+      >
+        <View className="w-7 h-7 rounded-full bg-[#1877F2] items-center justify-center mr-3">
+          <AntDesign name="plus" size={14} color="#fff" />
+        </View>
+        <Text className="text-sm text-slate-400 flex-1">
+          Share your thoughts...
+        </Text>
+      </TouchableOpacity>
 
-        {/* Dropdown Options */}
-        {sortDropdownVisible && (
-          <View className="mt-3 bg-slate-50 rounded-xl overflow-hidden">
+      {/* Sort pills */}
+      <View className="flex-row px-4 pb-3 gap-2">
+        {(["newest", "oldest", "most_liked"] as const).map((option) => {
+          const labels = {
+            newest: "Recent",
+            oldest: "Oldest",
+            most_liked: "Top",
+          };
+          const isActive = sortBy === option;
+          return (
             <TouchableOpacity
-              onPress={() => handleSortChange("newest")}
-              className="flex-row items-center justify-between px-4 py-3 border-b border-slate-200"
+              key={option}
+              onPress={() => handleSortChange(option)}
+              className={`px-3 py-1.5 rounded-full border ${
+                isActive
+                  ? "bg-[#1877F2] border-[#1877F2]"
+                  : "bg-white border-slate-200"
+              }`}
             >
-              <Text className="text-sm text-slate-700">Most Recent</Text>
-              {sortBy === "newest" && (
-                <AntDesign name="check" size={16} color="#3b82f6" />
-              )}
+              <Text
+                className={`text-xs font-semibold ${
+                  isActive ? "text-white" : "text-slate-500"
+                }`}
+              >
+                {labels[option]}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleSortChange("oldest")}
-              className="flex-row items-center justify-between px-4 py-3 border-b border-slate-200"
-            >
-              <Text className="text-sm text-slate-700">Oldest First</Text>
-              {sortBy === "oldest" && (
-                <AntDesign name="check" size={16} color="#3b82f6" />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleSortChange("most_liked")}
-              className="flex-row items-center justify-between px-4 py-3"
-            >
-              <Text className="text-sm text-slate-700">Most Liked</Text>
-              {sortBy === "most_liked" && (
-                <AntDesign name="check" size={16} color="#3b82f6" />
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-
-      {/* Add Comment Button */}
-      <View className="p-4 border-b border-slate-200">
-        <TouchableOpacity
-          onPress={handleAddComment}
-          className="bg-slate-100 px-4 py-3 rounded-xl flex-row items-center"
-        >
-          <AntDesign name="message" size={16} color="#64748b" />
-          <Text className="ml-2 text-slate-600">Add a comment...</Text>
-        </TouchableOpacity>
+          );
+        })}
       </View>
     </View>
   );

@@ -230,3 +230,55 @@ export type ReviewFilterOptions = {
 
 // Comment sort options
 export type CommentSortOption = "newest" | "oldest" | "most_liked";
+
+// ============================================================
+// NOTIFICATION TYPES
+// ============================================================
+
+export type NotificationType =
+  | "new_message"
+  | "new_review"
+  | "review_reply"
+  | "review_reaction"
+  | "new_subscriber"
+  | "service_discount"
+  | "new_service_from_subscription"
+  | "price_drop"
+  | "broadcast"
+  | "account_verified";
+
+export type Notification = {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: Record<string, string> | null; // e.g. { service_id, review_id, conversation_id }
+  is_read: boolean;
+  created_at: string;
+};
+
+// ============================================================
+// SUBSCRIPTION TYPES
+// ============================================================
+
+export type ServiceSubscription = {
+  id: string;
+  subscriber_id: string;
+  provider_id: string;
+  created_at: string;
+};
+
+export type ServiceSubscriptionWithProfile = ServiceSubscription & {
+  provider_profile?: Profile;
+  subscriber_profile?: Profile;
+};
+
+// Input type for creating a notification (used by admin/system calls)
+export type CreateNotificationInput = {
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+};
