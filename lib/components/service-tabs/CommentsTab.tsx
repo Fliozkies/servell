@@ -2,20 +2,20 @@
 import { AntDesign } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    RefreshControl,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  RefreshControl,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { fetchServiceComments } from "../../api/comments.api";
 import {
-    CommentSortOption,
-    CommentWithDetails,
-    ServiceWithDetails,
+  CommentSortOption,
+  CommentWithDetails,
+  ServiceWithDetails,
 } from "../../types/database.types";
 import AddCommentModal from "../AddCommentModal";
 import CommentItem from "../CommentItem";
@@ -24,12 +24,15 @@ type CommentsTabProps = {
   service: ServiceWithDetails;
   currentUserId: string | null;
   isOwnService: boolean;
+  highlightCommentId?: string;
+  expandReplies?: boolean; // New prop to auto-expand replies
 };
 
 export default function CommentsTab({
   service,
   currentUserId,
-  isOwnService,
+  highlightCommentId,
+  expandReplies = false,
 }: CommentsTabProps) {
   const [comments, setComments] = useState<CommentWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +43,10 @@ export default function CommentsTab({
   const [sortBy, setSortBy] = useState<CommentSortOption>("newest");
   const [addCommentVisible, setAddCommentVisible] = useState(false);
   const [replyingTo, setReplyingTo] = useState<CommentWithDetails | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+  const [highlightedCommentId, setHighlightedCommentId] = useState<
+    string | undefined
+  >(highlightCommentId);
 
   // Cache flag — only load once on first mount, unless manually refreshed
   const hasLoadedRef = useRef(false);
@@ -77,6 +84,26 @@ export default function CommentsTab({
     },
     [service.id, sortBy],
   );
+
+  // useEffect to scroll to highlighted comment after loading
+  useEffect(() => {
+    if (highlightedCommentId && comments.length > 0 && !loading) {
+      const index = comments.findIndex((c) => c.id === highlightedCommentId);
+      if (index !== -1) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({
+            index,
+            animated: true,
+            viewPosition: 0.5,
+          });
+
+          setTimeout(() => {
+            setHighlightedCommentId(undefined);
+          }, 3000);
+        }, 300);
+      }
+    }
+  }, [highlightedCommentId, comments, loading]);
 
   // Load only once on first mount (cache behavior)
   useEffect(() => {
@@ -133,10 +160,33 @@ export default function CommentsTab({
     setAddCommentVisible(true);
   };
 
-  const handleCommentSubmitted = () => {
+  const handleCommentSubmitted = (newComment?: CommentWithDetails) => {
     setAddCommentVisible(false);
     setReplyingTo(null);
-    handleRefresh();
+
+    if (newComment) {
+      // Optimistically add the comment to UI
+      if (newComment.parent_comment_id) {
+        // It's a reply - add to the parent comment's replies
+        setComments((prevComments) =>
+          prevComments.map((comment) => {
+            if (comment.id === newComment.parent_comment_id) {
+              return {
+                ...comment,
+                replies: [...(comment.replies || []), newComment],
+              };
+            }
+            return comment;
+          }),
+        );
+      } else {
+        // It's a top-level comment - add to the beginning
+        setComments((prevComments) => [newComment, ...prevComments]);
+      }
+    }
+
+    // Silently refresh in background to sync with DB
+    setTimeout(() => loadComments(0, true), 100);
   };
 
   const renderHeader = () => (
@@ -145,30 +195,27 @@ export default function CommentsTab({
       <TouchableOpacity
         onPress={handleAddComment}
         activeOpacity={0.75}
-        className="mx-4 mt-4 mb-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex-row items-center"
+        className="mx-4 mt-4 mb-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3"
       >
-        <View className="w-7 h-7 rounded-full bg-[#1877F2] items-center justify-center mr-3">
-          <AntDesign name="plus" size={14} color="#fff" />
-        </View>
         <Text className="text-sm text-slate-400 flex-1">
           Share your thoughts...
         </Text>
       </TouchableOpacity>
 
       {/* Sort pills */}
-      <View className="flex-row px-4 pb-3 gap-2">
+      <View className="flex-row px-4 py-2">
         {(["newest", "oldest", "most_liked"] as const).map((option) => {
           const labels = {
             newest: "Recent",
             oldest: "Oldest",
-            most_liked: "Top",
+            most_liked: "Most Liked",
           };
           const isActive = sortBy === option;
           return (
             <TouchableOpacity
               key={option}
               onPress={() => handleSortChange(option)}
-              className={`px-3 py-1.5 rounded-full border ${
+              className={`px-3 py-1.5 mr-3 rounded-full border ${
                 isActive
                   ? "bg-[#1877F2] border-[#1877F2]"
                   : "bg-white border-slate-200"
@@ -225,6 +272,7 @@ export default function CommentsTab({
     <View className="flex-1 bg-slate-50">
       <FlatList
         data={comments}
+        ref={flatListRef}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <CommentItem
@@ -232,6 +280,10 @@ export default function CommentsTab({
             currentUserId={currentUserId}
             onReply={handleReply}
             onUpdate={handleRefresh}
+            highlight={item.id === highlightedCommentId}
+            initiallyExpandReplies={
+              expandReplies && item.id === highlightedCommentId
+            }
           />
         )}
         ListHeaderComponent={renderHeader}
@@ -239,6 +291,16 @@ export default function CommentsTab({
         ListEmptyComponent={renderEmpty}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
+        onScrollToIndexFailed={(info) => {
+          // Retry scroll after a short delay if it fails
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({
+              index: info.index,
+              animated: true,
+              viewPosition: 0.5,
+            });
+          }, 100);
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

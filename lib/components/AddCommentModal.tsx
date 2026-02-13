@@ -2,14 +2,14 @@
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { createComment } from "../api/comments.api";
@@ -19,7 +19,7 @@ type AddCommentModalProps = {
   visible: boolean;
   onClose: () => void;
   serviceId: string;
-  onSubmit: () => void;
+  onSubmit: (newComment?: CommentWithDetails) => void;
   replyingTo?: CommentWithDetails | null;
 };
 
@@ -47,12 +47,20 @@ export default function AddCommentModal({
     if (!content.trim()) return;
     try {
       setSubmitting(true);
-      await createComment({
+
+      // Enforce 2-level threading: if replying to a reply, use the root parent instead
+      const parentId = replyingTo?.parent_comment_id
+        ? replyingTo.parent_comment_id // This is a reply, use its parent (the root comment)
+        : replyingTo?.id; // This is a top-level comment, use its ID directly
+
+      const newComment = await createComment({
         service_id: serviceId,
         content: content.trim(),
-        parent_comment_id: replyingTo?.id,
+        parent_comment_id: parentId,
       });
-      onSubmit();
+
+      // Pass the new comment back for optimistic UI update
+      onSubmit(newComment);
       handleClose();
     } catch (error: any) {
       Alert.alert("Error", error.message || "Failed to submit comment");

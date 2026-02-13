@@ -1,24 +1,7 @@
-import { fetchUserServices } from "@/lib/api/services.api";
-import {
-  getSubscriberCount,
-  getSubscriptions,
-  unsubscribeFromProvider,
-} from "@/lib/api/subscriptions.api";
-import { supabase } from "@/lib/api/supabase";
-import {
-  addTag,
-  loadCategories,
-  pickImage,
-  removeTag,
-  uploadImage,
-} from "@/lib/functions/create_service";
-import {
-  Category,
-  Profile,
-  Service,
-  ServiceSubscriptionWithProfile,
-} from "@/lib/types/database.types";
+// app/screens/ProfileScreen.tsx
+// Previously: app/juarez_app/pages/Profile_page.tsx
 import { AntDesign } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import {
   AlertCircle,
@@ -55,83 +38,92 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  fetchUserServices,
+  updateServiceStatus,
+} from "../../lib/api/services.api";
+import {
+  getSubscriberCount,
+  getSubscriptions,
+  unsubscribeFromProvider,
+} from "../../lib/api/subscriptions.api";
+import { supabase } from "../../lib/api/supabase";
+import { ProfileImageModal } from "../../lib/components/ProfileImageModal";
+import { FormField } from "../../lib/components/ui/FormField";
+import { ProfileAvatar } from "../../lib/components/ui/ProfileAvatar";
+import { TabBar } from "../../lib/components/ui/TabBar";
+import { TagInput } from "../../lib/components/ui/TagInput";
+import { COLORS } from "../../lib/constants/theme";
+import {
+  useServiceForm,
+  validateServiceForm,
+} from "../../lib/hooks/useServiceForm";
+import {
+  Profile,
+  Service,
+  ServiceSubscriptionWithProfile,
+} from "../../lib/types/database.types";
+import { formatDisplayName, formatPrice } from "../../lib/utils/format";
+import { uploadImage } from "../../lib/utils/imageUtils";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ProfileTab = "posts" | "subscriptions" | "reviews";
 
+const PROFILE_TABS = [
+  { key: "posts" as const, label: "Services" },
+  { key: "subscriptions" as const, label: "Following" },
+  { key: "reviews" as const, label: "My Reviews" },
+];
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function handleLogout() {
   await supabase.auth.signOut();
-  router.replace("../../(auth)/auth");
+  router.replace("/(auth)/auth");
 }
 
-function formatDisplayName(profile: Profile | null): string {
-  if (!profile) return "My Profile";
-  return (
-    `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() ||
-    "My Profile"
-  );
-}
+// ── Main Screen ───────────────────────────────────────────────────────────────
 
-// ── Main Component ────────────────────────────────────────────────────────────
-
-const ProfilePage = () => {
+export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
-
-  // User data
   const [profile, setProfile] = useState<Profile | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [subscriberCount, setSubscriberCount] = useState(0);
-
-  // Services tab
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
-
-  // Subscriptions tab
   const [subscriptions, setSubscriptions] = useState<
     ServiceSubscriptionWithProfile[]
   >([]);
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
-
-  // Reviews tab
   const [reviews, setReviews] = useState<any[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
-
-  // Cache flags — only load each lazy tab once; pull-to-refresh bypasses them
-  const subscriptionsLoadedRef = useRef(false);
-  const reviewsLoadedRef = useRef(false);
-
-  // Global refresh state
   const [refreshing, setRefreshing] = useState(false);
-
-  // Modal states
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isActionSheetVisible, setIsActionSheetVisible] = useState(false);
   const [isEditServiceVisible, setIsEditServiceVisible] = useState(false);
   const [serviceToEdit, setServiceToEdit] = useState<Service | null>(null);
+  const [isProfileImageModalVisible, setIsProfileImageModalVisible] =
+    useState(false);
 
-  // ── Data Loaders ───────────────────────────────────────────────────────────
+  const subscriptionsLoadedRef = useRef(false);
+  const reviewsLoadedRef = useRef(false);
+
+  // ── Data loaders ───────────────────────────────────────────────────────────
 
   const loadProfile = useCallback(async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
-
     setCurrentUserId(user.id);
-
     const { data } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .single();
-
     if (data) setProfile(data);
-
-    const count = await getSubscriberCount(user.id);
-    setSubscriberCount(count);
+    setSubscriberCount(await getSubscriberCount(user.id));
   }, []);
 
   const loadServices = useCallback(async () => {
@@ -150,8 +142,7 @@ const ProfilePage = () => {
   const loadSubscriptions = useCallback(async () => {
     setLoadingSubscriptions(true);
     try {
-      const data = await getSubscriptions();
-      setSubscriptions(data);
+      setSubscriptions(await getSubscriptions());
     } catch (e) {
       console.error(e);
     } finally {
@@ -165,10 +156,9 @@ const ProfilePage = () => {
     try {
       const { data, error } = await supabase
         .from("reviews")
-        .select(`*, service:services(title, image_url)`)
+        .select("*, service:services(title, image_url)")
         .eq("user_id", currentUserId)
         .order("created_at", { ascending: false });
-
       if (error) throw error;
       setReviews(data ?? []);
     } catch (e) {
@@ -178,16 +168,12 @@ const ProfilePage = () => {
     }
   }, [currentUserId]);
 
-  // ── Effects ────────────────────────────────────────────────────────────────
-
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
-
   useEffect(() => {
     if (currentUserId) loadServices();
   }, [currentUserId, loadServices]);
-
   useEffect(() => {
     if (activeTab === "subscriptions" && !subscriptionsLoadedRef.current) {
       subscriptionsLoadedRef.current = true;
@@ -199,16 +185,11 @@ const ProfilePage = () => {
     }
   }, [activeTab, loadReviews, loadSubscriptions]);
 
-  // FIX: All used variables are listed as dependencies. This is correct because
-  // onRefresh reads activeTab and calls load* functions that may change identity.
-  // The load* functions themselves are stable (memoized with useCallback), so
-  // adding them here does NOT cause infinite loops — it just keeps the closure fresh.
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProfile();
-    if (activeTab === "posts") {
-      await loadServices();
-    } else if (activeTab === "subscriptions") {
+    if (activeTab === "posts") await loadServices();
+    else if (activeTab === "subscriptions") {
       subscriptionsLoadedRef.current = true;
       await loadSubscriptions();
     } else if (activeTab === "reviews") {
@@ -218,41 +199,64 @@ const ProfilePage = () => {
     setRefreshing(false);
   }, [activeTab, loadProfile, loadServices, loadSubscriptions, loadReviews]);
 
-  // ── Service Actions ────────────────────────────────────────────────────────
+  // ── Profile image update ───────────────────────────────────────────────────
 
-  const openActionMenu = useCallback((service: Service) => {
-    setServiceToEdit(service);
-    setIsActionSheetVisible(true);
-  }, []);
+  const handleUpdateProfileImage = useCallback(
+    async (imageUrl: string) => {
+      if (!currentUserId) return;
+
+      try {
+        const { error } = await supabase
+          .from("profiles")
+          .update({ profile_image_url: imageUrl })
+          .eq("id", currentUserId);
+
+        if (error) throw error;
+
+        // Update local state
+        setProfile((prev) =>
+          prev ? { ...prev, profile_image_url: imageUrl } : null,
+        );
+      } catch (err: any) {
+        console.error("Profile image update error:", err);
+        throw err;
+      }
+    },
+    [currentUserId],
+  );
+
+  // ── Service actions ────────────────────────────────────────────────────────
 
   const handleToggleStatus = useCallback((service: Service) => {
     const newStatus = service.status === "active" ? "inactive" : "active";
     const label = newStatus === "active" ? "Activate" : "Deactivate";
-
-    Alert.alert(
-      `${label} Service`,
-      `Are you sure you want to ${label.toLowerCase()} "${service.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: label,
-          onPress: async () => {
-            const { error } = await supabase
-              .from("services")
-              .update({ status: newStatus })
-              .eq("id", service.id);
-
-            if (!error) {
-              setServices((prev) =>
-                prev.map((s) =>
-                  s.id === service.id ? { ...s, status: newStatus } : s,
-                ),
-              );
-            }
-          },
+    Alert.alert(`${label} Service`, `${label} "${service.title}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: label,
+        onPress: async () => {
+          try {
+            const updatedService = await updateServiceStatus(
+              service.id,
+              newStatus,
+            );
+            setServices((prev) =>
+              prev.map((s) => (s.id === service.id ? updatedService : s)),
+            );
+            Alert.alert(
+              "Success",
+              `Service ${label.toLowerCase()}d successfully`,
+            );
+          } catch (err: any) {
+            console.error("Toggle status error:", err);
+            Alert.alert(
+              "Error",
+              err?.message || "An unexpected error occurred. Please try again.",
+            );
+          }
         },
-      ],
-    );
+      },
+    ]);
   }, []);
 
   const handleDeleteService = useCallback(async () => {
@@ -262,7 +266,7 @@ const ProfilePage = () => {
     setTimeout(() => {
       Alert.alert(
         "Delete Service",
-        `"${captured.title}" will be permanently removed. This cannot be undone.`,
+        `"${captured.title}" will be permanently removed.`,
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -273,10 +277,8 @@ const ProfilePage = () => {
                 .from("services")
                 .update({ status: "deleted" })
                 .eq("id", captured.id);
-
-              if (!error) {
+              if (!error)
                 setServices((prev) => prev.filter((s) => s.id !== captured.id));
-              }
             },
           },
         ],
@@ -284,35 +286,29 @@ const ProfilePage = () => {
     }, 300);
   }, [serviceToEdit]);
 
-  // ── Subscription Actions ───────────────────────────────────────────────────
-
-  const handleUnsubscribe = useCallback(
-    (providerId: string, providerName: string) => {
-      Alert.alert("Unsubscribe", `Stop following ${providerName}?`, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Unsubscribe",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await unsubscribeFromProvider(providerId);
-              setSubscriptions((prev) =>
-                prev.filter((s) => s.provider_id !== providerId),
-              );
-            } catch (e) {
-              Alert.alert("Error", "Could not unsubscribe. Please try again.");
-              console.error("Unsubscribe error:", e);
-            }
-          },
+  const handleUnsubscribe = useCallback((providerId: string, name: string) => {
+    Alert.alert("Unsubscribe", `Stop following ${name}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Unsubscribe",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await unsubscribeFromProvider(providerId);
+            setSubscriptions((prev) =>
+              prev.filter((s) => s.provider_id !== providerId),
+            );
+          } catch {
+            Alert.alert("Error", "Could not unsubscribe. Please try again.");
+          }
         },
-      ]);
-    },
-    [],
-  );
+      },
+    ]);
+  }, []);
 
-  // ── Derived Values ─────────────────────────────────────────────────────────
+  // ── Derived values ─────────────────────────────────────────────────────────
 
-  const displayName = formatDisplayName(profile);
+  const displayName = formatDisplayName(profile, "My Profile");
   const activeServiceCount = services.filter(
     (s) => s.status === "active",
   ).length;
@@ -323,18 +319,16 @@ const ProfilePage = () => {
         ).toFixed(1)
       : "—";
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
+  // text-xl font-bold text-slate-900
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      {/* Header */}
-      <View className="flex-row justify-between items-center px-5 py-4 border-b border-slate-100">
-        <Text className="text-xl font-bold text-slate-900">Profile</Text>
+    <View className="flex-1 bg-white">
+      <View className="flex-row justify-between items-center px-5 pb-2 border-b border-slate-100">
+        <Text className="text-3xl font-bold text-slate-900">Profile</Text>
         <TouchableOpacity
           onPress={() => setIsSettingsVisible(true)}
           className="p-2 bg-slate-50 rounded-full"
         >
-          <Settings size={20} color="#64748b" />
+          <Settings size={20} color={COLORS.slate500} />
         </TouchableOpacity>
       </View>
 
@@ -345,26 +339,26 @@ const ProfilePage = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#1877F2"
+            tintColor={COLORS.primary}
           />
         }
       >
-        {/* Profile Header Card */}
+        {/* Profile header */}
         <View className="px-5 pt-6 pb-4">
           <View className="flex-row items-center">
-            <View className="w-20 h-20 rounded-2xl bg-slate-200 items-center justify-center">
-              <Text className="text-3xl font-bold text-slate-500">
-                {displayName[0]?.toUpperCase() ?? "?"}
-              </Text>
-            </View>
-
+            <TouchableOpacity
+              onPress={() => setIsProfileImageModalVisible(true)}
+              activeOpacity={0.7}
+            >
+              <ProfileAvatar profile={profile} size={80} textSize={32} />
+            </TouchableOpacity>
             <View className="ml-4 flex-1">
               <View className="flex-row items-center flex-wrap">
                 <Text className="text-xl font-bold text-slate-900 mr-2">
                   {displayName}
                 </Text>
                 {profile?.physis_verified && (
-                  <BadgeCheck size={18} color="#1877F2" fill="#dbeafe" />
+                  <BadgeCheck size={18} color={COLORS.primary} fill="#dbeafe" />
                 )}
               </View>
               <Text className="text-slate-400 text-sm mt-0.5">
@@ -379,7 +373,6 @@ const ProfilePage = () => {
             </View>
           </View>
 
-          {/* Stats Row */}
           <View className="flex-row mt-5 bg-slate-50 rounded-2xl p-4">
             <StatPill label="Subscribers" value={subscriberCount} />
             <View className="w-[1px] bg-slate-200 mx-4" />
@@ -389,38 +382,22 @@ const ProfilePage = () => {
           </View>
         </View>
 
-        {/* Tab Bar */}
-        <View className="flex-row px-5 border-b border-slate-100">
-          <ProfileTabButton
-            active={activeTab === "posts"}
-            onPress={() => setActiveTab("posts")}
-            label="Services"
-            Icon={List}
-          />
-          <ProfileTabButton
-            active={activeTab === "subscriptions"}
-            onPress={() => setActiveTab("subscriptions")}
-            label="Following"
-            Icon={Users}
-          />
-          <ProfileTabButton
-            active={activeTab === "reviews"}
-            onPress={() => setActiveTab("reviews")}
-            label="My Reviews"
-            Icon={Star}
-          />
-        </View>
+        {/* Tab Bar — uses shared TabBar component */}
+        <TabBar
+          tabs={PROFILE_TABS}
+          activeTab={activeTab}
+          onTabPress={setActiveTab}
+        />
 
-        {/* Tab Content */}
+        {/* Tab content */}
         <View className="px-5 pb-10 pt-4">
-          {/* ── SERVICES TAB ─────────────────────────────────────────── */}
           {activeTab === "posts" && (
             <>
               {loadingServices ? (
                 <LoadingSpinner />
               ) : services.length === 0 ? (
-                <EmptyState
-                  icon={<List size={32} color="#94a3b8" />}
+                <ProfileEmptyState
+                  icon={<List size={32} color={COLORS.slate400} />}
                   title="No services yet"
                   subtitle="Tap the + button to post your first service listing."
                 />
@@ -429,7 +406,10 @@ const ProfilePage = () => {
                   <ServiceCard
                     key={service.id}
                     service={service}
-                    onMorePress={() => openActionMenu(service)}
+                    onMorePress={() => {
+                      setServiceToEdit(service);
+                      setIsActionSheetVisible(true);
+                    }}
                     onToggleStatus={() => handleToggleStatus(service)}
                   />
                 ))
@@ -437,16 +417,15 @@ const ProfilePage = () => {
             </>
           )}
 
-          {/* ── SUBSCRIPTIONS TAB ────────────────────────────────────── */}
           {activeTab === "subscriptions" && (
             <>
               {loadingSubscriptions ? (
                 <LoadingSpinner />
               ) : subscriptions.length === 0 ? (
-                <EmptyState
-                  icon={<Users size={32} color="#94a3b8" />}
+                <ProfileEmptyState
+                  icon={<Users size={32} color={COLORS.slate400} />}
                   title="Not following anyone"
-                  subtitle="Subscribe to service providers on their profile to stay updated."
+                  subtitle="Subscribe to service providers to stay updated."
                 />
               ) : (
                 subscriptions.map((sub) => (
@@ -460,14 +439,13 @@ const ProfilePage = () => {
             </>
           )}
 
-          {/* ── REVIEWS TAB ──────────────────────────────────────────── */}
           {activeTab === "reviews" && (
             <>
               {loadingReviews ? (
                 <LoadingSpinner />
               ) : reviews.length === 0 ? (
-                <EmptyState
-                  icon={<Star size={32} color="#94a3b8" />}
+                <ProfileEmptyState
+                  icon={<Star size={32} color={COLORS.slate400} />}
                   title="No reviews yet"
                   subtitle="Reviews you write will appear here."
                 />
@@ -481,7 +459,7 @@ const ProfilePage = () => {
         </View>
       </ScrollView>
 
-      {/* ── Action Sheet ── */}
+      {/* Action Sheet */}
       <Modal visible={isActionSheetVisible} transparent animationType="slide">
         <TouchableOpacity
           className="flex-1 bg-black/40 justify-end"
@@ -494,7 +472,6 @@ const ProfilePage = () => {
             className="bg-white rounded-t-[32px] p-6 pb-10"
           >
             <View className="w-12 h-1 bg-slate-200 rounded-full self-center mb-6" />
-
             {serviceToEdit && (
               <Text
                 className="text-center font-bold text-slate-900 text-base mb-4"
@@ -503,9 +480,8 @@ const ProfilePage = () => {
                 {serviceToEdit.title}
               </Text>
             )}
-
             <MenuOption
-              icon={<Edit3 size={20} color="#1877F2" />}
+              icon={<Edit3 size={20} color={COLORS.primary} />}
               label="Edit Service"
               onPress={() => {
                 setIsActionSheetVisible(false);
@@ -517,7 +493,7 @@ const ProfilePage = () => {
                 serviceToEdit?.status === "active" ? (
                   <AlertCircle size={20} color="#f97316" />
                 ) : (
-                  <BarChart3 size={20} color="#10b981" />
+                  <BarChart3 size={20} color={COLORS.success} />
                 )
               }
               label={
@@ -526,18 +502,19 @@ const ProfilePage = () => {
                   : "Activate (show)"
               }
               onPress={() => {
-                const captured = serviceToEdit;
+                const c = serviceToEdit;
                 setIsActionSheetVisible(false);
-                if (captured) handleToggleStatus(captured);
+                setTimeout(() => {
+                  if (c) handleToggleStatus(c);
+                }, 300);
               }}
             />
             <MenuOption
-              icon={<Trash2 size={20} color="#ef4444" />}
+              icon={<Trash2 size={20} color={COLORS.danger} />}
               label="Delete Service"
               destructive
               onPress={handleDeleteService}
             />
-
             <TouchableOpacity
               onPress={() => setIsActionSheetVisible(false)}
               className="mt-4 bg-slate-100 py-4 rounded-2xl items-center"
@@ -548,7 +525,6 @@ const ProfilePage = () => {
         </TouchableOpacity>
       </Modal>
 
-      {/* ── Edit Service Modal ── */}
       {serviceToEdit && (
         <EditServiceModal
           visible={isEditServiceVisible}
@@ -563,22 +539,28 @@ const ProfilePage = () => {
         />
       )}
 
-      {/* ── Settings Modal ── */}
       <SettingsModal
         visible={isSettingsVisible}
         profile={profile}
         onClose={() => setIsSettingsVisible(false)}
-        onProfileUpdated={(updated) => setProfile(updated)}
+        onProfileUpdated={setProfile}
       />
-    </SafeAreaView>
-  );
-};
 
-// ── Shared UI Primitives ──────────────────────────────────────────────────────
+      <ProfileImageModal
+        visible={isProfileImageModalVisible}
+        onClose={() => setIsProfileImageModalVisible(false)}
+        profile={profile}
+        onImageUpdate={handleUpdateProfileImage}
+      />
+    </View>
+  );
+}
+
+// ── Shared Primitives ─────────────────────────────────────────────────────────
 
 const LoadingSpinner = () => (
   <View className="py-16 items-center">
-    <ActivityIndicator color="#1877F2" />
+    <ActivityIndicator color={COLORS.primary} />
   </View>
 );
 
@@ -595,35 +577,7 @@ const StatPill = ({
   </View>
 );
 
-const ProfileTabButton = ({
-  active,
-  onPress,
-  label,
-  Icon,
-}: {
-  active: boolean;
-  onPress: () => void;
-  label: string;
-  Icon: React.ComponentType<{ size: number; color: string }>;
-}) => (
-  <TouchableOpacity
-    onPress={onPress}
-    className={`flex-row items-center py-3.5 mr-5 border-b-2 ${
-      active ? "border-[#1877F2]" : "border-transparent"
-    }`}
-  >
-    <Icon size={16} color={active ? "#1877F2" : "#94a3b8"} />
-    <Text
-      className={`ml-1.5 text-sm font-semibold ${
-        active ? "text-[#1877F2]" : "text-slate-400"
-      }`}
-    >
-      {label}
-    </Text>
-  </TouchableOpacity>
-);
-
-const EmptyState = ({
+const ProfileEmptyState = ({
   icon,
   title,
   subtitle,
@@ -640,23 +594,6 @@ const EmptyState = ({
       {title}
     </Text>
     <Text className="text-sm text-slate-400 text-center mt-1">{subtitle}</Text>
-  </View>
-);
-
-const FormField = ({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) => (
-  <View className="mb-4">
-    <Text className="text-sm font-semibold text-slate-700 mb-2">
-      {label} {required && <Text className="text-red-500">*</Text>}
-    </Text>
-    {children}
   </View>
 );
 
@@ -677,20 +614,19 @@ const MenuOption = ({
   >
     {icon}
     <Text
-      className={`ml-4 text-base ${
-        destructive ? "text-red-500 font-bold" : "text-slate-900 font-medium"
-      }`}
+      className={`ml-4 text-base ${destructive ? "text-red-500 font-bold" : "text-slate-900 font-medium"}`}
     >
       {label}
     </Text>
   </TouchableOpacity>
 );
 
-// ── Tab-specific Sub-components ───────────────────────────────────────────────
+// ── ServiceCard ───────────────────────────────────────────────────────────────
 
 const ServiceCard = ({
   service,
   onMorePress,
+  onToggleStatus,
 }: {
   service: Service;
   onMorePress: () => void;
@@ -701,16 +637,10 @@ const ServiceCard = ({
       <View className="flex-1 pr-3">
         <View className="flex-row items-center mb-1">
           <View
-            className={`px-2 py-0.5 rounded-full mr-2 ${
-              service.status === "active" ? "bg-green-100" : "bg-slate-100"
-            }`}
+            className={`px-2 py-0.5 rounded-full mr-2 ${service.status === "active" ? "bg-green-100" : "bg-slate-100"}`}
           >
             <Text
-              className={`text-[10px] font-bold uppercase ${
-                service.status === "active"
-                  ? "text-green-700"
-                  : "text-slate-500"
-              }`}
+              className={`text-[10px] font-bold uppercase ${service.status === "active" ? "text-green-700" : "text-slate-500"}`}
             >
               {service.status}
             </Text>
@@ -730,41 +660,37 @@ const ServiceCard = ({
             </Text>
           </View>
           <View className="flex-row items-center mr-3">
-            <MapPin size={12} color="#94a3b8" />
+            <MapPin size={12} color={COLORS.slate400} />
             <Text className="ml-1 text-xs text-slate-500" numberOfLines={1}>
               {service.location}
             </Text>
           </View>
           <Text className="text-xs font-semibold text-[#1877F2]">
-            {service.price != null
-              ? `₱${service.price.toLocaleString()}`
-              : "Contact for price"}
+            {formatPrice(service.price)}
           </Text>
         </View>
       </View>
-
       <TouchableOpacity
         onPress={onMorePress}
         className="p-2 bg-slate-50 rounded-xl"
       >
-        <MoreVertical size={18} color="#64748b" />
+        <MoreVertical size={18} color={COLORS.slate500} />
       </TouchableOpacity>
     </View>
   </View>
 );
+
+// ── SubscriptionRow ───────────────────────────────────────────────────────────
 
 const SubscriptionRow = ({
   subscription: sub,
   onUnsubscribe,
 }: {
   subscription: ServiceSubscriptionWithProfile;
-  onUnsubscribe: (providerId: string, name: string) => void;
+  onUnsubscribe: (id: string, name: string) => void;
 }) => {
   const p = sub.provider_profile;
-  const name = p
-    ? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() || "Provider"
-    : "Provider";
-
+  const name = formatDisplayName(p ?? null, "Provider");
   return (
     <View className="flex-row items-center py-3 border-b border-slate-50">
       <View className="w-12 h-12 rounded-xl bg-slate-200 items-center justify-center mr-3">
@@ -776,7 +702,7 @@ const SubscriptionRow = ({
         <View className="flex-row items-center">
           <Text className="font-semibold text-slate-900">{name}</Text>
           {p?.physis_verified && (
-            <BadgeCheck size={14} color="#1877F2" className="ml-1" />
+            <BadgeCheck size={14} color={COLORS.primary} className="ml-1" />
           )}
         </View>
         <Text className="text-xs text-slate-400 mt-0.5">
@@ -792,7 +718,7 @@ const SubscriptionRow = ({
         onPress={() => onUnsubscribe(sub.provider_id, name)}
         className="bg-slate-100 rounded-full px-3 py-1.5 flex-row items-center"
       >
-        <UserMinus size={14} color="#64748b" />
+        <UserMinus size={14} color={COLORS.slate500} />
         <Text className="text-xs font-medium text-slate-600 ml-1">
           Unfollow
         </Text>
@@ -800,6 +726,8 @@ const SubscriptionRow = ({
     </View>
   );
 };
+
+// ── ReviewCard ────────────────────────────────────────────────────────────────
 
 const ReviewCard = ({ review }: { review: any }) => (
   <View className="bg-white border border-slate-100 rounded-2xl p-4 mb-3">
@@ -834,7 +762,7 @@ const ReviewCard = ({ review }: { review: any }) => (
   </View>
 );
 
-// ── Edit Service Modal ────────────────────────────────────────────────────────
+// ── EditServiceModal ──────────────────────────────────────────────────────────
 
 const EditServiceModal = ({
   visible,
@@ -847,75 +775,44 @@ const EditServiceModal = ({
   onClose: () => void;
   onSaved: (updated: Service) => void;
 }) => {
-  const [title, setTitle] = useState(service.title);
-  const [description, setDescription] = useState(service.description);
-  const [price, setPrice] = useState(
-    service.price != null ? String(service.price) : "",
-  );
-  const [location, setLocation] = useState(service.location);
-  const [phoneNumber, setPhoneNumber] = useState(service.phone_number ?? "");
-  const [tags, setTags] = useState<string[]>(service.tags ?? []);
-  const [currentTag, setCurrentTag] = useState("");
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(
-    service.category_id,
-  );
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!visible) return;
-    loadCategories({ setLoadingCategories: () => {}, setCategories });
-    setTitle(service.title);
-    setDescription(service.description);
-    setPrice(service.price != null ? String(service.price) : "");
-    setLocation(service.location);
-    setPhoneNumber(service.phone_number ?? "");
-    setTags(service.tags ?? []);
-    setSelectedCategory(service.category_id);
-    setSelectedImage(null);
-  }, [visible, service]);
+  const form = useServiceForm(visible ? service : null);
 
   const handleSave = async () => {
-    if (!title.trim()) {
-      Alert.alert("Required", "Please enter a title.");
+    if (
+      !validateServiceForm({
+        title: form.title,
+        description: form.description,
+        location: form.location,
+        selectedCategory: form.selectedCategory,
+        price: form.price,
+      })
+    )
       return;
-    }
-    if (!description.trim()) {
-      Alert.alert("Required", "Please enter a description.");
-      return;
-    }
-
     setSaving(true);
     try {
       let imageUrl = service.image_url;
-      if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage, "service-images");
-      }
-
-      const updates = {
-        title: title.trim(),
-        description: description.trim(),
-        price: price.trim() ? parseFloat(price) : null,
-        location: location.trim(),
-        phone_number: phoneNumber.trim() || null,
-        tags: tags.length > 0 ? tags : null,
-        category_id: selectedCategory,
-        image_url: imageUrl,
-      };
-
+      if (form.selectedImage)
+        imageUrl = await uploadImage(form.selectedImage, "service-images");
       const { data, error } = await supabase
         .from("services")
-        .update(updates)
+        .update({
+          title: form.title.trim(),
+          description: form.description.trim(),
+          price: form.price.trim() ? parseFloat(form.price) : null,
+          location: form.location.trim(),
+          phone_number: form.phoneNumber.trim() || null,
+          tags: form.tags.length > 0 ? form.tags : null,
+          category_id: form.selectedCategory,
+          image_url: imageUrl,
+        })
         .eq("id", service.id)
         .select()
         .single();
-
       if (error) throw error;
       onSaved(data);
       Alert.alert("Saved!", "Your service has been updated.");
-    } catch (e) {
-      console.error(e);
+    } catch {
       Alert.alert("Error", "Could not save changes. Please try again.");
     } finally {
       setSaving(false);
@@ -927,7 +824,7 @@ const EditServiceModal = ({
       <SafeAreaView className="flex-1 bg-white">
         <View className="flex-row justify-between items-center px-5 py-4 border-b border-slate-100">
           <TouchableOpacity onPress={onClose} className="p-1">
-            <X size={24} color="#0f172a" />
+            <X size={24} color={COLORS.slate900} />
           </TouchableOpacity>
           <Text className="text-lg font-bold text-slate-900">Edit Service</Text>
           <TouchableOpacity
@@ -942,76 +839,63 @@ const EditServiceModal = ({
             )}
           </TouchableOpacity>
         </View>
-
         <ScrollView className="flex-1 p-5" showsVerticalScrollIndicator={false}>
-          {/* Image Picker */}
           <TouchableOpacity
-            onPress={() => pickImage(setSelectedImage)}
+            onPress={form.handlePickImage}
             className="border-2 border-dashed border-slate-300 rounded-2xl overflow-hidden mb-4"
             style={{ height: 160 }}
           >
-            {selectedImage || service.image_url ? (
+            {form.selectedImage || service.image_url ? (
               <Image
                 source={{
-                  uri: selectedImage ?? service.image_url ?? undefined,
+                  uri: form.selectedImage ?? service.image_url ?? undefined,
                 }}
                 className="w-full h-full"
                 resizeMode="cover"
               />
             ) : (
               <View className="flex-1 items-center justify-center">
-                <AntDesign name="camera" size={32} color="#94a3b8" />
+                <AntDesign name="camera" size={32} color={COLORS.slate400} />
                 <Text className="text-slate-400 text-sm mt-2">
                   Change image
                 </Text>
               </View>
             )}
           </TouchableOpacity>
-
           <FormField label="Title" required>
             <TextInput
-              value={title}
-              onChangeText={setTitle}
+              value={form.title}
+              onChangeText={form.setTitle}
               className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={COLORS.slate400}
             />
           </FormField>
-
           <FormField label="Description" required>
             <TextInput
-              value={description}
-              onChangeText={setDescription}
+              value={form.description}
+              onChangeText={form.setDescription}
               multiline
               numberOfLines={4}
               textAlignVertical="top"
               className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={COLORS.slate400}
               style={{ minHeight: 90 }}
             />
           </FormField>
-
           <FormField label="Category">
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               className="-mx-1"
             >
-              {categories.map((cat) => (
+              {form.categories.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
-                  onPress={() => setSelectedCategory(cat.id)}
-                  className={`mx-1 px-4 py-2 rounded-full border ${
-                    selectedCategory === cat.id
-                      ? "bg-[#1877F2] border-[#1877F2]"
-                      : "bg-white border-slate-300"
-                  }`}
+                  onPress={() => form.setSelectedCategory(cat.id)}
+                  className={`mx-1 px-4 py-2 rounded-full border ${form.selectedCategory === cat.id ? "bg-[#1877F2] border-[#1877F2]" : "bg-white border-slate-300"}`}
                 >
                   <Text
-                    className={`text-sm font-medium ${
-                      selectedCategory === cat.id
-                        ? "text-white"
-                        : "text-slate-700"
-                    }`}
+                    className={`text-sm font-medium ${form.selectedCategory === cat.id ? "text-white" : "text-slate-700"}`}
                   >
                     {cat.name}
                   </Text>
@@ -1019,77 +903,42 @@ const EditServiceModal = ({
               ))}
             </ScrollView>
           </FormField>
-
           <FormField label="Price (₱)">
             <TextInput
-              value={price}
-              onChangeText={setPrice}
+              value={form.price}
+              onChangeText={form.setPrice}
               keyboardType="numeric"
               placeholder="Leave blank for 'Contact for price'"
               className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={COLORS.slate400}
             />
           </FormField>
-
           <FormField label="Tags">
-            <View className="flex-row items-center mb-2">
-              <TextInput
-                value={currentTag}
-                onChangeText={setCurrentTag}
-                placeholder="Add a tag..."
-                className="flex-1 border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-                placeholderTextColor="#94a3b8"
-                onSubmitEditing={() =>
-                  addTag({ currentTag, tags, setTags, setCurrentTag })
-                }
-              />
-              <TouchableOpacity
-                onPress={() =>
-                  addTag({ currentTag, tags, setTags, setCurrentTag })
-                }
-                className="ml-2 bg-[#1877F2] rounded-xl px-4 py-3"
-              >
-                <Text className="text-white font-semibold">Add</Text>
-              </TouchableOpacity>
-            </View>
-            {tags.length > 0 && (
-              <View className="flex-row flex-wrap">
-                {tags.map((tag, i) => (
-                  <View
-                    key={i}
-                    className="bg-slate-100 rounded-full px-3 py-1 flex-row items-center mr-2 mb-2"
-                  >
-                    <Text className="text-slate-700 text-sm mr-1">{tag}</Text>
-                    <TouchableOpacity
-                      onPress={() => removeTag(tag, tags, setTags)}
-                    >
-                      <AntDesign name="close" size={12} color="#64748b" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
+            <TagInput
+              tags={form.tags}
+              currentTag={form.currentTag}
+              onChangeTag={form.setCurrentTag}
+              onAdd={form.handleAddTag}
+              onRemove={form.handleRemoveTag}
+            />
           </FormField>
-
           <FormField label="Location" required>
             <TextInput
-              value={location}
-              onChangeText={setLocation}
+              value={form.location}
+              onChangeText={form.setLocation}
               className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={COLORS.slate400}
             />
           </FormField>
-
           <FormField label="Phone Number">
             <TextInput
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
+              value={form.phoneNumber}
+              onChangeText={form.setPhoneNumber}
               keyboardType="phone-pad"
               className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={COLORS.slate400}
             />
           </FormField>
-
           <View className="h-8" />
         </ScrollView>
       </SafeAreaView>
@@ -1097,7 +946,7 @@ const EditServiceModal = ({
   );
 };
 
-// ── Settings Modal ────────────────────────────────────────────────────────────
+// ── SettingsModal ─────────────────────────────────────────────────────────────
 
 type SettingsSection =
   | "main"
@@ -1106,7 +955,6 @@ type SettingsSection =
   | "terms"
   | "help"
   | "notifPrefs";
-
 const SECTION_TITLES: Record<SettingsSection, string> = {
   main: "Settings",
   account: "Account Details",
@@ -1130,7 +978,70 @@ const SettingsModal = ({
   const [section, setSection] = useState<SettingsSection>("main");
   const [firstName, setFirstName] = useState(profile?.first_name ?? "");
   const [lastName, setLastName] = useState(profile?.last_name ?? "");
-  const [savingProfile, setSavingProfile] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Notification preferences state
+  const [notifMessages, setNotifMessages] = useState(true);
+  const [notifReviews, setNotifReviews] = useState(true);
+  const [notifComments, setNotifComments] = useState(true);
+  const [notifSubscriptions, setNotifSubscriptions] = useState(true);
+  const [notifServiceUpdates, setNotifServiceUpdates] = useState(true);
+
+  // Load notification preferences from AsyncStorage on mount
+  useEffect(() => {
+    loadNotificationPreferences();
+  }, []);
+  const saveNotificationPreferences = useCallback(async () => {
+    try {
+      const prefs = {
+        messages: notifMessages,
+        reviews: notifReviews,
+        comments: notifComments,
+        subscriptions: notifSubscriptions,
+        serviceUpdates: notifServiceUpdates,
+      };
+      await AsyncStorage.setItem(
+        "notification_preferences",
+        JSON.stringify(prefs),
+      );
+    } catch (error) {
+      console.error("Error saving notification preferences:", error);
+    }
+  }, [
+    notifComments,
+    notifMessages,
+    notifReviews,
+    notifServiceUpdates,
+    notifSubscriptions,
+  ]);
+
+  // Save notification preferences whenever they change
+  useEffect(() => {
+    saveNotificationPreferences();
+  }, [
+    notifMessages,
+    notifReviews,
+    notifComments,
+    notifSubscriptions,
+    notifServiceUpdates,
+    saveNotificationPreferences,
+  ]);
+
+  const loadNotificationPreferences = async () => {
+    try {
+      const stored = await AsyncStorage.getItem("notification_preferences");
+      if (stored) {
+        const prefs = JSON.parse(stored);
+        setNotifMessages(prefs.messages ?? true);
+        setNotifReviews(prefs.reviews ?? true);
+        setNotifComments(prefs.comments ?? true);
+        setNotifSubscriptions(prefs.subscriptions ?? true);
+        setNotifServiceUpdates(prefs.serviceUpdates ?? true);
+      }
+    } catch (error) {
+      console.error("Error loading notification preferences:", error);
+    }
+  };
 
   useEffect(() => {
     if (!visible) return;
@@ -1139,9 +1050,9 @@ const SettingsModal = ({
     setLastName(profile?.last_name ?? "");
   }, [visible, profile]);
 
-  const saveProfileDetails = async () => {
+  const saveProfile = async () => {
     if (!profile) return;
-    setSavingProfile(true);
+    setSaving(true);
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -1156,51 +1067,24 @@ const SettingsModal = ({
     } catch {
       Alert.alert("Error", "Could not save profile. Please try again.");
     } finally {
-      setSavingProfile(false);
+      setSaving(false);
     }
   };
 
-  const requestVerification = async () => {
-    if (!profile) return;
-    Alert.alert(
-      "Submit for Verification",
-      "Our team will review your PhilSys ID. For now this will mark your account as verified.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Submit",
-          onPress: async () => {
-            const { data, error } = await supabase
-              .from("profiles")
-              .update({ physis_verified: true })
-              .eq("id", profile.id)
-              .select()
-              .single();
-            if (!error && data) {
-              onProfileUpdated(data);
-              Alert.alert(
-                "Submitted!",
-                "Your account is now marked as verified.",
-              );
-              setSection("main");
-            }
-          },
-        },
-      ],
-    );
-  };
-
   return (
-    <Modal visible={visible} animationType="slide">
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
       <SafeAreaView className="flex-1 bg-white">
-        {/* Header */}
         <View className="flex-row items-center px-5 py-4 border-b border-slate-100">
           {section !== "main" && (
             <TouchableOpacity
               onPress={() => setSection("main")}
               className="p-1 mr-3"
             >
-              <AntDesign name="arrow-left" size={22} color="#0f172a" />
+              <AntDesign name="arrow-left" size={22} color={COLORS.slate900} />
             </TouchableOpacity>
           )}
           <Text className="text-xl font-bold text-slate-900 flex-1">
@@ -1208,16 +1092,16 @@ const SettingsModal = ({
           </Text>
           {section === "main" && (
             <TouchableOpacity onPress={onClose} className="p-1">
-              <X size={22} color="#0f172a" />
+              <X size={22} color={COLORS.slate900} />
             </TouchableOpacity>
           )}
           {section === "account" && (
             <TouchableOpacity
-              onPress={saveProfileDetails}
-              disabled={savingProfile}
+              onPress={saveProfile}
+              disabled={saving}
               className="bg-[#1877F2] px-4 py-2 rounded-full"
             >
-              {savingProfile ? (
+              {saving ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
                 <Text className="text-white font-bold text-sm">Save</Text>
@@ -1225,13 +1109,12 @@ const SettingsModal = ({
             </TouchableOpacity>
           )}
         </View>
-
         <ScrollView className="flex-1">
           {section === "main" && (
             <View className="p-5">
               <SectionGroup label="Account">
                 <SettingsRow
-                  icon={<Edit3 size={20} color="#1877F2" />}
+                  icon={<Edit3 size={20} color={COLORS.primary} />}
                   label="Account Details"
                   subtitle="Edit your name"
                   onPress={() => setSection("account")}
@@ -1240,7 +1123,9 @@ const SettingsModal = ({
                   icon={
                     <Shield
                       size={20}
-                      color={profile?.physis_verified ? "#10b981" : "#f97316"}
+                      color={
+                        profile?.physis_verified ? COLORS.success : "#f97316"
+                      }
                     />
                   }
                   label="Verify Account"
@@ -1252,36 +1137,33 @@ const SettingsModal = ({
                   onPress={() => setSection("verify")}
                 />
               </SectionGroup>
-
               <SectionGroup label="Preferences">
                 <SettingsRow
-                  icon={<Bell size={20} color="#8b5cf6" />}
+                  icon={<Bell size={20} color={COLORS.info} />}
                   label="Notification Preferences"
                   subtitle="Control what alerts you receive"
                   onPress={() => setSection("notifPrefs")}
                 />
               </SectionGroup>
-
               <SectionGroup label="Legal & Support">
                 <SettingsRow
-                  icon={<FileText size={20} color="#64748b" />}
+                  icon={<FileText size={20} color={COLORS.slate500} />}
                   label="Terms & Services"
                   onPress={() => setSection("terms")}
                 />
                 <SettingsRow
-                  icon={<HelpCircle size={20} color="#64748b" />}
+                  icon={<HelpCircle size={20} color={COLORS.slate500} />}
                   label="Help & Support"
                   onPress={() => setSection("help")}
                 />
               </SectionGroup>
-
               <SectionGroup label="">
                 <SettingsRow
-                  icon={<LogOut size={20} color="#ef4444" />}
+                  icon={<LogOut size={20} color={COLORS.danger} />}
                   label="Logout"
                   destructive
                   onPress={() =>
-                    Alert.alert("Logout", "Are you sure you want to log out?", [
+                    Alert.alert("Logout", "Are you sure?", [
                       { text: "Cancel", style: "cancel" },
                       {
                         text: "Logout",
@@ -1292,13 +1174,11 @@ const SettingsModal = ({
                   }
                 />
               </SectionGroup>
-
               <Text className="text-center text-xs text-slate-300 mt-6 mb-2">
                 Servell v1.0 · February 2026
               </Text>
             </View>
           )}
-
           {section === "account" && (
             <View className="p-5">
               <FormField label="First Name">
@@ -1307,7 +1187,7 @@ const SettingsModal = ({
                   onChangeText={setFirstName}
                   placeholder="First name"
                   className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={COLORS.slate400}
                 />
               </FormField>
               <FormField label="Last Name">
@@ -1316,144 +1196,51 @@ const SettingsModal = ({
                   onChangeText={setLastName}
                   placeholder="Last name"
                   className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={COLORS.slate400}
                 />
               </FormField>
-              <View className="bg-blue-50 rounded-xl p-4 mt-2">
-                <Text className="text-xs text-blue-600">
-                  Your display name is shown to other users across the app.
-                  Email and password changes are managed through your account
-                  settings on the login page.
-                </Text>
-              </View>
             </View>
           )}
-
-          {section === "verify" && (
-            <View className="p-5">
-              {profile?.physis_verified ? (
-                <View className="items-center py-8">
-                  <View className="w-20 h-20 rounded-full bg-green-100 items-center justify-center mb-4">
-                    <BadgeCheck size={40} color="#10b981" />
-                  </View>
-                  <Text className="text-xl font-bold text-slate-900 mb-2">
-                    You&#x2019;re Verified!
-                  </Text>
-                  <Text className="text-slate-500 text-center">
-                    Your PhilSys ID has been verified. A verification badge is
-                    shown on your public profile.
-                  </Text>
-                </View>
-              ) : (
-                <View>
-                  <Text className="text-slate-700 mb-4">
-                    Verifying your account builds trust with clients.
-                    You&#x2019;ll receive a blue checkmark badge on your profile
-                    after verification.
-                  </Text>
-                  <View className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-                    <Text className="text-sm font-semibold text-amber-800 mb-1">
-                      📋 What you&#x2019;ll need
-                    </Text>
-                    <Text className="text-sm text-amber-700">
-                      A valid PhilSys National ID card. Make sure the details on
-                      your profile match your ID.
-                    </Text>
-                  </View>
-                  <Text className="text-xs text-slate-400 mb-6">
-                    Note: Automated verification is coming soon. This will mark
-                    your account as verified for demonstration purposes.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={requestVerification}
-                    className="bg-[#1877F2] py-4 rounded-2xl items-center"
-                  >
-                    <Text className="text-white font-bold text-base">
-                      Submit for Verification
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
-
           {section === "notifPrefs" && (
             <View className="p-5">
-              <Text className="text-slate-500 text-sm mb-4">
-                Choose which notifications you receive. (Full preference
-                management coming in a future update.)
+              <Text className="text-sm text-slate-600 mb-4">
+                Choose which notifications you&apos;d like to receive
               </Text>
-              {NOTIFICATION_PREFS.map((item) => (
-                <View
-                  key={item.label}
-                  className="flex-row items-center justify-between py-4 border-b border-slate-50"
-                >
-                  <View>
-                    <Text className="font-semibold text-slate-800">
-                      {item.label}
-                    </Text>
-                    <Text className="text-xs text-slate-400">
-                      {item.subtitle}
-                    </Text>
-                  </View>
-                  <View className="w-12 h-7 bg-[#1877F2] rounded-full items-center justify-center">
-                    <Text className="text-white text-xs font-bold">ON</Text>
-                  </View>
-                </View>
-              ))}
-              <Text className="text-xs text-slate-300 mt-4 text-center">
-                Toggle controls are coming soon.
-              </Text>
-            </View>
-          )}
-
-          {section === "terms" && (
-            <View className="p-5">
-              <Text className="text-lg font-bold text-slate-900 mb-3">
-                Terms of Service
-              </Text>
-              {TERMS_SECTIONS.map((t) => (
-                <View key={t.heading}>
-                  {t.heading ? (
-                    <Text className="text-sm font-semibold text-slate-800 mb-2">
-                      {t.heading}
-                    </Text>
-                  ) : null}
-                  <Text className="text-sm text-slate-600 leading-6 mb-4">
-                    {t.body}
-                  </Text>
-                </View>
-              ))}
-              <Text className="text-xs text-slate-400 mt-4">
-                Last updated: February 2026
-              </Text>
-            </View>
-          )}
-
-          {section === "help" && (
-            <View className="p-5">
-              <Text className="text-lg font-bold text-slate-900 mb-4">
-                Help & Support
-              </Text>
-              {HELP_FAQS.map((item) => (
-                <View key={item.q} className="mb-5">
-                  <Text className="font-semibold text-slate-800 mb-1">
-                    {item.q}
-                  </Text>
-                  <Text className="text-sm text-slate-500 leading-5">
-                    {item.a}
-                  </Text>
-                </View>
-              ))}
-              <View className="bg-blue-50 rounded-xl p-4 mt-2">
-                <Text className="text-sm font-semibold text-blue-800 mb-1">
-                  Still need help?
-                </Text>
-                <Text className="text-sm text-blue-600">
-                  Email us at support@servell.ph and we&#x2019;ll get back to
-                  you within 24 hours.
-                </Text>
-              </View>
+              <NotificationToggle
+                icon={<Bell size={20} color={COLORS.primary} />}
+                label="New Messages"
+                description="Get notified when you receive new messages"
+                value={notifMessages}
+                onToggle={setNotifMessages}
+              />
+              <NotificationToggle
+                icon={<Star size={20} color="#f59e0b" />}
+                label="Reviews & Ratings"
+                description="Alerts when someone reviews your services"
+                value={notifReviews}
+                onToggle={setNotifReviews}
+              />
+              <NotificationToggle
+                icon={<List size={20} color={COLORS.info} />}
+                label="Comments"
+                description="Notifications for comments on your services"
+                value={notifComments}
+                onToggle={setNotifComments}
+              />
+              <NotificationToggle
+                icon={<Users size={20} color={COLORS.success} />}
+                label="New Followers"
+                description="Know when someone subscribes to your services"
+                value={notifSubscriptions}
+                onToggle={setNotifSubscriptions}
+              />
+              <NotificationToggle
+                icon={<BarChart3 size={20} color="#8b5cf6" />}
+                label="Service Updates"
+                description="Updates about services you're following"
+                value={notifServiceUpdates}
+                onToggle={setNotifServiceUpdates}
+              />
             </View>
           )}
         </ScrollView>
@@ -1461,8 +1248,6 @@ const SettingsModal = ({
     </Modal>
   );
 };
-
-// ── Settings Sub-components ───────────────────────────────────────────────────
 
 const SectionGroup = ({
   label,
@@ -1498,14 +1283,12 @@ const SettingsRow = ({
 }) => (
   <TouchableOpacity
     onPress={onPress}
-    className="flex-row items-center px-4 py-4 border-b border-slate-50 last:border-0 active:bg-slate-50"
+    className="flex-row items-center px-4 py-4 border-b border-slate-50 active:bg-slate-50"
   >
     <View className="w-8 items-center mr-3">{icon}</View>
     <View className="flex-1">
       <Text
-        className={`font-medium text-base ${
-          destructive ? "text-red-500" : "text-slate-900"
-        }`}
+        className={`font-medium text-base ${destructive ? "text-red-500" : "text-slate-900"}`}
       >
         {label}
       </Text>
@@ -1513,60 +1296,36 @@ const SettingsRow = ({
         <Text className="text-xs text-slate-400 mt-0.5">{subtitle}</Text>
       )}
     </View>
-    {!destructive && <ChevronRight size={18} color="#cbd5e1" />}
+    {!destructive && <ChevronRight size={18} color={COLORS.slate300} />}
   </TouchableOpacity>
 );
 
-// ── Static Data ───────────────────────────────────────────────────────────────
-
-const NOTIFICATION_PREFS = [
-  { label: "Messages", subtitle: "New chat messages" },
-  { label: "Reviews & Replies", subtitle: "Reviews on your services" },
-  { label: "Subscriber alerts", subtitle: "When someone follows you" },
-  { label: "Discount alerts", subtitle: "From providers you follow" },
-  { label: "Platform announcements", subtitle: "Holiday deals & news" },
-];
-
-const TERMS_SECTIONS = [
-  {
-    heading: "",
-    body: "By using Servell, you agree to use the platform responsibly and in accordance with applicable laws in the Philippines.",
-  },
-  {
-    heading: "Service Listings",
-    body: "You are responsible for the accuracy and legality of any services you post. Servell reserves the right to remove listings that violate our community guidelines.",
-  },
-  {
-    heading: "Payments",
-    body: "Servell does not process payments between buyers and sellers. All financial arrangements are made directly between users.",
-  },
-  {
-    heading: "Privacy",
-    body: "Your data is stored securely on Supabase infrastructure. We do not sell your personal data to third parties. See our full Privacy Policy for more details.",
-  },
-];
-
-const HELP_FAQS = [
-  {
-    q: "How do I post a service?",
-    a: 'Tap the + button in the bottom navigation bar. Fill in your service details and tap "Post Service".',
-  },
-  {
-    q: "How do I message a provider?",
-    a: 'Open a service listing and tap "Contact Provider". This will start a private conversation.',
-  },
-  {
-    q: "How do I leave a review?",
-    a: 'You must first start a conversation with the provider. After that, a "Write a Review" option will be available on the service page.',
-  },
-  {
-    q: "How do I subscribe to a provider?",
-    a: "Visit a service provider's profile and tap the Subscribe button. You'll then receive updates when they post discounts or new services.",
-  },
-  {
-    q: "How do I verify my account?",
-    a: "Go to Settings → Verify Account and follow the instructions to submit your PhilSys ID.",
-  },
-];
-
-export default ProfilePage;
+const NotificationToggle = ({
+  icon,
+  label,
+  description,
+  value,
+  onToggle,
+}: {
+  icon: React.ReactElement;
+  label: string;
+  description: string;
+  value: boolean;
+  onToggle: (value: boolean) => void;
+}) => (
+  <View className="flex-row items-start py-4 border-b border-slate-100">
+    <View className="w-8 items-center mr-3 mt-0.5">{icon}</View>
+    <View className="flex-1 mr-3">
+      <Text className="font-medium text-base text-slate-900">{label}</Text>
+      <Text className="text-xs text-slate-500 mt-1">{description}</Text>
+    </View>
+    <TouchableOpacity
+      onPress={() => onToggle(!value)}
+      className={`w-12 h-7 rounded-full justify-center ${value ? "bg-[#1877F2]" : "bg-slate-300"}`}
+    >
+      <View
+        className={`w-5 h-5 rounded-full bg-white shadow-sm ${value ? "ml-auto mr-1" : "ml-1"}`}
+      />
+    </TouchableOpacity>
+  </View>
+);

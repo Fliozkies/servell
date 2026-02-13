@@ -1,13 +1,11 @@
 import { AntDesign } from "@expo/vector-icons";
 import { useState } from "react";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
-import { EdgeInsets } from "react-native-safe-area-context";
 
 type ServicesHeaderProps = {
   searchQuery: string;
   onSearchChange: (text: string) => void;
   onFilterPress: () => void;
-  insets: EdgeInsets;
   activeFilterCount?: number;
   hasActiveFilters?: boolean;
 };
@@ -16,8 +14,6 @@ export default function ServicesHeader({
   searchQuery,
   onSearchChange,
   onFilterPress,
-  insets,
-  activeFilterCount = 0,
   hasActiveFilters = false,
 }: ServicesHeaderProps) {
   const [isFocused, setIsFocused] = useState(false);
@@ -27,17 +23,14 @@ export default function ServicesHeader({
   };
 
   return (
-    <View
-      className="bg-white px-6 py-4"
-      style={{ paddingTop: insets.top + 16 }}
-    >
+    <View className="bg-white px-5 py-2">
       <View className="flex-row items-center justify-between">
         <Text className="font-bold text-slate-900 text-3xl">Servell</Text>
 
         {/* Search + Filter row */}
         <View
           className={`flex-1 ml-4 flex-row items-center rounded-2xl px-3 ${
-            isFocused ? "bg-blue-50" : "bg-slate-50"
+            isFocused ? "bg-blue-50" : "bg-slate-100"
           }`}
         >
           <AntDesign

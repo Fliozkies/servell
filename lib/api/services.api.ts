@@ -268,3 +268,78 @@ export async function searchAndFilterServices(params: {
     throw error;
   }
 }
+
+/**
+ * Update service status (active/inactive/deleted)
+ * Uses direct update - requires proper RLS policies
+ */
+export async function updateServiceStatus(
+  serviceId: string,
+  status: "active" | "inactive" | "deleted",
+) {
+  try {
+    const { data, error } = await supabase
+      .from("services")
+      .update({ status })
+      .eq("id", serviceId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating service status:", error);
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Failed to update service status:", error);
+    throw error;
+  }
+}
+
+/**
+ * Update service status using database function (RPC)
+ * This is an alternative that works when RLS policies are strict
+ * Requires the update_service_status PostgreSQL function to be created first
+ */
+export async function updateServiceStatusRPC(
+  serviceId: string,
+  status: "active" | "inactive" | "deleted",
+) {
+  try {
+    // First verify the service exists and user owns it
+    const { data: existingService } = await supabase
+      .from("services")
+      .select("id, user_id, status")
+      .eq("id", serviceId)
+      .single();
+
+    if (!existingService) {
+      throw new Error("Service not found");
+    }
+
+    console.log("Updating service:", {
+      serviceId,
+      currentStatus: existingService.status,
+      newStatus: status,
+    });
+
+    const { data, error } = await supabase
+      .rpc("update_service_status", {
+        service_id: serviceId,
+        new_status: status,
+      })
+      .single();
+
+    if (error) {
+      console.error("Error updating service status via RPC:", error);
+      throw error;
+    }
+
+    console.log("Service updated successfully:", data);
+    return data;
+  } catch (error) {
+    console.error("Failed to update service status via RPC:", error);
+    throw error;
+  }
+}

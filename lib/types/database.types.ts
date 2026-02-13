@@ -4,6 +4,7 @@ export type Profile = {
   id: string;
   first_name: string | null;
   last_name: string | null;
+  profile_image_url: string | null;
   physis_verified: boolean;
   created_at: string;
   updated_at: string;
@@ -245,7 +246,10 @@ export type NotificationType =
   | "new_service_from_subscription"
   | "price_drop"
   | "broadcast"
-  | "account_verified";
+  | "account_verified"
+  | "new_comment"
+  | "comment_reply"
+  | "comment_like";
 
 export type Notification = {
   id: string;

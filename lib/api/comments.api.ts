@@ -1,10 +1,11 @@
 // lib/api/comments.api.ts
 import {
-    CommentSortOption,
-    CommentWithDetails,
-    CreateCommentInput,
-    UpdateCommentInput,
+  CommentSortOption,
+  CommentWithDetails,
+  CreateCommentInput,
+  UpdateCommentInput,
 } from "../types/database.types";
+import { sendNotification } from "./notifications.api";
 import { supabase } from "./supabase";
 
 const COMMENTS_PER_PAGE = 10;
@@ -164,9 +165,43 @@ export async function createComment(
     // Check if user is the provider
     const { data: service } = await supabase
       .from("services")
-      .select("user_id")
+      .select("user_id, title")
       .eq("id", input.service_id)
       .single();
+
+    // ✅ FIX: If this is a top-level comment, notify the service owner
+    if (!input.parent_comment_id && service && service.user_id !== user.id) {
+      await sendNotification({
+        user_id: service.user_id,
+        type: "new_comment",
+        title: "New Comment",
+        body: `Someone commented on your service: ${service.title}`,
+        data: { service_id: input.service_id, comment_id: data.id },
+      });
+    }
+
+    // ✅ FIX: If this is a reply, notify the parent comment author
+    if (input.parent_comment_id) {
+      const { data: parentComment } = await supabase
+        .from("service_comments")
+        .select("user_id")
+        .eq("id", input.parent_comment_id)
+        .single();
+
+      if (parentComment && parentComment.user_id !== user.id) {
+        await sendNotification({
+          user_id: parentComment.user_id,
+          type: "comment_reply",
+          title: "New Reply",
+          body: `Someone replied to your comment`,
+          data: {
+            service_id: input.service_id,
+            comment_id: data.id,
+            parent_comment_id: input.parent_comment_id,
+          },
+        });
+      }
+    }
 
     return {
       ...data,
@@ -223,18 +258,33 @@ export async function updateComment(
 /**
  * Delete a comment (soft delete)
  */
+/**
+ * Delete a comment (soft delete)
+ */
 export async function deleteComment(commentId: string): Promise<void> {
   try {
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (authError || !user) throw new Error("User not authenticated");
 
-    const { error } = await supabase
+    // First, verify the comment belongs to the user
+    const { data: comment, error: fetchError } = await supabase
       .from("service_comments")
-      .update({ is_deleted: true })
+      .select("id, user_id, is_deleted")
       .eq("id", commentId)
-      .eq("user_id", user.id);
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!comment) throw new Error("Comment not found");
+    if (comment.user_id !== user.id) throw new Error("Unauthorized");
+
+    // Use service role client to bypass RLS for the update
+    const { error } = await supabase.rpc("soft_delete_comment", {
+      p_comment_id: commentId,
+      p_user_id: user.id,
+    });
 
     if (error) throw error;
   } catch (error) {
@@ -269,6 +319,7 @@ export async function toggleCommentLike(commentId: string): Promise<void> {
         .eq("id", existingLike.id);
 
       if (error) throw error;
+      // Don't notify when unliking
     } else {
       // Like
       const { error } = await supabase.from("comment_likes").insert({
@@ -277,6 +328,27 @@ export async function toggleCommentLike(commentId: string): Promise<void> {
       });
 
       if (error) throw error;
+
+      // ✅ FIX: Notify the comment author about the like - INCLUDE service_id
+      const { data: comment } = await supabase
+        .from("service_comments")
+        .select("user_id, service_id, service:services(title)")
+        .eq("id", commentId)
+        .single();
+
+      if (comment && comment.user_id !== user.id) {
+        const serviceTitle = comment.service?.[0]?.title ?? "a service";
+        await sendNotification({
+          user_id: comment.user_id,
+          type: "comment_like",
+          title: "Comment Liked",
+          body: `Someone liked your comment on ${serviceTitle}`,
+          data: {
+            comment_id: commentId,
+            service_id: comment.service_id,
+          },
+        });
+      }
     }
   } catch (error) {
     console.error("Error toggling comment like:", error);

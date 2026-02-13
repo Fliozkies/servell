@@ -3,22 +3,23 @@ import { AntDesign } from "@expo/vector-icons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React, { useState } from "react";
 import {
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-    createReviewReply,
-    deleteReview,
-    deleteReviewReply,
-    toggleReviewReaction,
-    updateReviewReply,
+  createReviewReply,
+  deleteReview,
+  deleteReviewReply,
+  toggleReviewReaction,
+  updateReviewReply,
 } from "../api/reviews.api";
-import { formatDistanceToNow } from "../functions/dateUtils";
 import { ReviewWithDetails } from "../types/database.types";
+import { formatDistanceToNow } from "../utils/date";
+import { ProfileAvatar } from "./ui/ProfileAvatar";
 
 type ReviewItemProps = {
   review: ReviewWithDetails;
@@ -30,6 +31,7 @@ type ReviewItemProps = {
   isUserReview?: boolean;
   /** When true, Edit/Delete buttons are hidden — managed by the parent */
   hideActions?: boolean;
+  highlight?: boolean;
 };
 
 export default function ReviewItem({
@@ -41,6 +43,7 @@ export default function ReviewItem({
   onEdit,
   isUserReview = false,
   hideActions = false,
+  highlight = false,
 }: ReviewItemProps) {
   // Optimistic local state for reactions — no full reload on tap
   const [localReaction, setLocalReaction] = useState<
@@ -215,14 +218,10 @@ export default function ReviewItem({
   const canReply = isOwnService && currentUserId === serviceProviderId;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, highlight && styles.containerHighlight]}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.avatarWrap}>
-          <Text style={styles.avatarText}>
-            {authorName.charAt(0).toUpperCase()}
-          </Text>
-        </View>
+        <ProfileAvatar profile={review.profile} size={40} />
         <View style={styles.headerMeta}>
           <Text style={styles.authorName}>{authorName}</Text>
           <Text style={styles.timestamp}>
@@ -395,17 +394,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
-  avatarWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#3b82f6",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  avatarText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  headerMeta: { flex: 1 },
+  headerMeta: { flex: 1, marginLeft: 10 },
   authorName: { fontSize: 13, fontWeight: "700", color: "#0f172a" },
   timestamp: { fontSize: 11, color: "#94a3b8", marginTop: 1 },
   starsRow: { flexDirection: "row", gap: 2 },
@@ -539,4 +528,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#3b82f6",
   },
   replySubmitText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  containerHighlight: {
+    backgroundColor: "#eff6ff",
+    borderLeftWidth: 4,
+    borderLeftColor: "#3b82f6",
+  },
 });

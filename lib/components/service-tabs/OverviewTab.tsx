@@ -3,6 +3,7 @@ import { AntDesign, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
 import { ServiceWithDetails } from "../../types/database.types";
+import { ProfileAvatar } from "../ui/ProfileAvatar";
 
 type OverviewTabProps = {
   service: ServiceWithDetails;
@@ -12,7 +13,7 @@ export default function OverviewTab({ service }: OverviewTabProps) {
   const authorName = service.profile?.first_name
     ? `${service.profile.first_name} ${service.profile.last_name || ""}`.trim()
     : "Unknown";
-  const categoryName = service.category?.name || "Uncategorized";
+  const categoryName = service.category?.name;
 
   return (
     <ScrollView
@@ -111,12 +112,8 @@ export default function OverviewTab({ service }: OverviewTabProps) {
             Service Provider
           </Text>
           <View className="flex-row items-center">
-            <View className="w-11 h-11 rounded-full bg-[#1877F2] items-center justify-center">
-              <Text className="text-white text-base font-bold">
-                {authorName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View className="ml-3 flex-1">
+            <ProfileAvatar profile={service.profile} size={40} />
+            <View className="ml-2 flex-1">
               <Text className="text-sm font-bold text-slate-900">
                 {authorName}
               </Text>

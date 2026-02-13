@@ -1,3 +1,4 @@
+// lib/components/BottomNav.tsx
 import {
   Bell,
   Home,
@@ -6,34 +7,29 @@ import {
   Plus,
   User,
 } from "lucide-react-native";
-import React from "react";
-import { Platform, Text, TouchableOpacity, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PageName } from "../../../lib/types/custom.types";
+import React, { memo } from "react";
+import { Text, TouchableOpacity, View } from "react-native";
+// import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { COLORS } from "../constants/theme";
+import { PageName } from "../types/custom.types";
+import { formatBadge } from "../utils/format";
 
-/** Caps a badge count at 99, returning "99+" for anything higher */
-function formatBadge(count: number): string {
-  if (count <= 0) return "";
-  return count > 99 ? "99+" : String(count);
-}
-
-const BottomNav = ({
-  currentTab,
-  onTabPress,
-  unreadMessages = 0,
-  unreadNotifications = 0,
-}: {
+interface BottomNavProps {
   currentTab: PageName;
   onTabPress: (name: PageName) => void;
   unreadMessages?: number;
   unreadNotifications?: number;
-}) => {
-  const insets = useSafeAreaInsets();
-  const responsivePadding = Platform.OS === "ios" ? insets.bottom : 0;
+}
 
+const BottomNav = memo(function BottomNav({
+  currentTab,
+  onTabPress,
+  unreadMessages = 0,
+  unreadNotifications = 0,
+}: BottomNavProps) {
   return (
-    <View style={{ paddingBottom: responsivePadding }}>
-      <View className="flex-row items-center justify-between bg-white/95 px-4 py-3 border border-slate-200 border-b-0">
+    <View>
+      <View className="flex-row items-center justify-between px-4 py-2 border-t-2 border-red-200">
         <NavButton
           name="Services"
           label="Services"
@@ -51,11 +47,11 @@ const BottomNav = ({
           badgeCount={unreadNotifications}
         />
 
-        {/* Post Button — Central Action */}
+        {/* Central FAB */}
         <TouchableOpacity
           onPress={() => onTabPress("Post")}
           activeOpacity={0.8}
-          className="bg-[#1877F2] w-14 h-14 rounded-full items-center justify-center -mt-12 border-4 border-slate-50"
+          className="bg-[#1877F2] w-14 h-14 rounded-full"
           style={{
             shadowColor: "#818cf8",
             shadowOffset: { width: 0, height: 8 },
@@ -63,7 +59,7 @@ const BottomNav = ({
             shadowRadius: 10,
           }}
         >
-          <Plus size={28} color="white" strokeWidth={3} />
+          <Plus size={30} color="white" strokeWidth={3} />
         </TouchableOpacity>
 
         <NavButton
@@ -85,9 +81,11 @@ const BottomNav = ({
       </View>
     </View>
   );
-};
+});
 
-const NavButton = ({
+// ── NavButton ─────────────────────────────────────────────────────────────────
+
+const NavButton = memo(function NavButton({
   icon,
   label,
   active,
@@ -100,9 +98,9 @@ const NavButton = ({
   onPress: () => void;
   name: string;
   badgeCount?: number;
-}) => {
+}) {
   const badge = formatBadge(badgeCount);
-  const isWide = badge.length > 1; // "99+" needs more horizontal room
+  const isWide = badge.length > 1;
 
   return (
     <TouchableOpacity
@@ -110,10 +108,9 @@ const NavButton = ({
       activeOpacity={0.7}
       className="items-center justify-center px-2 py-1"
     >
-      {/* Icon wrapper with badge */}
       <View className="relative">
         {React.cloneElement(icon, {
-          color: active ? "#1877F2" : "#94a3b8",
+          color: active ? COLORS.primary : COLORS.slate400,
           strokeWidth: active ? 2.5 : 2,
         })}
 
@@ -137,12 +134,14 @@ const NavButton = ({
       </View>
 
       <Text
-        className={`text-[10px] mt-1 font-medium ${active ? "color-[#1877F2]" : "text-slate-400"}`}
+        className={`text-[10px] mt-1 font-medium ${
+          active ? "color-[#1877F2]" : "text-slate-400"
+        }`}
       >
         {label}
       </Text>
     </TouchableOpacity>
   );
-};
+});
 
 export default BottomNav;

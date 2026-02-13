@@ -24,7 +24,7 @@ export const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 
 export const RATING_OPTIONS = [
   { value: null, label: "Any Rating" },
-  { valie: 3, label: "3+ Stars" },
+  { value: 3, label: "3+ Stars" },      // ← Fixed: was `valie` (typo)
   { value: 4, label: "4+ Stars" },
   { value: 4.5, label: "4.5+ Stars" },
 ];

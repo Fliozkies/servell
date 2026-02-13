@@ -2,25 +2,25 @@
 import { AntDesign } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-    canUserReviewService,
-    deleteReview,
-    fetchServiceReviews,
-    getUserReviewForService,
+  canUserReviewService,
+  deleteReview,
+  fetchServiceReviews,
+  getUserReviewForService,
 } from "../../api/reviews.api";
 import {
-    ReviewFilterOptions,
-    ReviewWithDetails,
-    ServiceWithDetails,
+  ReviewFilterOptions,
+  ReviewWithDetails,
+  ServiceWithDetails,
 } from "../../types/database.types";
 import ReviewFilterBottomSheet from "../ReviewFilterBottomSheet";
 import ReviewItem from "../ReviewItem";
@@ -31,6 +31,7 @@ type ReviewsTabProps = {
   currentUserId: string | null;
   isOwnService: boolean;
   onServiceUpdate?: () => void;
+  highlightReviewId?: string;
 };
 
 export default function ReviewsTab({
@@ -38,6 +39,7 @@ export default function ReviewsTab({
   currentUserId,
   isOwnService,
   onServiceUpdate,
+  highlightReviewId,
 }: ReviewsTabProps) {
   const [reviews, setReviews] = useState<ReviewWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +62,10 @@ export default function ReviewsTab({
 
   // Cache flag — only load once on first mount, unless manually refreshed
   const hasLoadedRef = useRef(false);
+  const flatListRef = useRef<FlatList>(null);
+  const [highlightedReviewId, setHighlightedReviewId] = useState<
+    string | undefined
+  >(highlightReviewId);
 
   const loadReviews = useCallback(
     async (pageNum: number, shouldRefresh: boolean = false) => {
@@ -117,6 +123,28 @@ export default function ReviewsTab({
       checkReviewEligibility();
     }
   }); // Empty deps — intentional one-time load
+
+  // Scroll to highlighted review after reviews are loaded
+  useEffect(() => {
+    if (highlightedReviewId && reviews.length > 0 && !loading) {
+      const index = reviews.findIndex((r) => r.id === highlightedReviewId);
+      if (index !== -1) {
+        // Delay to ensure FlatList is fully rendered
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({
+            index,
+            animated: true,
+            viewPosition: 0.5, // Center the item
+          });
+
+          // Clear highlight after 3 seconds
+          setTimeout(() => {
+            setHighlightedReviewId(undefined);
+          }, 3000);
+        }, 300);
+      }
+    }
+  }, [highlightedReviewId, reviews, loading]);
 
   // Re-load when filters change (user explicitly changed filters)
   const isFirstFilterRender = useRef(true);
@@ -299,6 +327,7 @@ export default function ReviewsTab({
             onUpdate={handleRefresh}
             isUserReview={true}
             hideActions={true}
+            highlight={userReview.id === highlightedReviewId}
           />
         </View>
       )}
@@ -343,6 +372,7 @@ export default function ReviewsTab({
   return (
     <View className="flex-1">
       <FlatList
+        ref={flatListRef}
         data={reviews}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
@@ -353,6 +383,7 @@ export default function ReviewsTab({
             serviceProviderId={service.user_id}
             onUpdate={handleRefresh}
             hideActions={true}
+            highlight={item.id === highlightedReviewId}
           />
         )}
         ListHeaderComponent={renderHeader}
@@ -360,6 +391,16 @@ export default function ReviewsTab({
         ListEmptyComponent={renderEmpty}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
+        onScrollToIndexFailed={(info) => {
+          // If scroll fails, try again after a short delay
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({
+              index: info.index,
+              animated: true,
+              viewPosition: 0.5,
+            });
+          }, 100);
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

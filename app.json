@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.xfliozkies.authWithTabs",
+      "bundleIdentifier": "com.xfliozkies.servell",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -24,7 +24,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.xfliozkies.authWithTabs",
+      "package": "com.xfliozkies.servell",
       "softwareKeyboardLayoutMode": "resize"
     },
     "web": {

@@ -2,15 +2,15 @@
 import { AntDesign } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { createReview, updateReview } from "../api/reviews.api";
@@ -99,9 +99,9 @@ export default function WriteReviewModal({
           onPress={handleClose}
         />
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior="position"
           style={styles.kavWrap}
-          keyboardVerticalOffset={28}
+          keyboardVerticalOffset={22}
         >
           <View style={styles.sheet}>
             {/* Handle */}
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.1)",
   },
   backdropTouch: {
     position: "absolute",
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
   },
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 0 },
   ratingSection: {
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: 10,
     paddingBottom: 16,
     alignItems: "center",
     borderBottomWidth: 1,
@@ -325,8 +325,8 @@ const styles = StyleSheet.create({
   },
   commentSection: {
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   commentLabelRow: {
     flexDirection: "row",
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
     borderColor: "#e2e8f0",
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 8,
     fontSize: 14,
     color: "#0f172a",
     minHeight: 110,
