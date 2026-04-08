@@ -33,13 +33,15 @@ export function TabBar<T extends string>({
             <TouchableOpacity
               key={tab.key}
               onPress={() => onTabPress(tab.key)}
-              className={`flex-1 py-4 items-center border-b-2 ${
-                isActive ? "border-blue-500" : "border-transparent"
+              className={`flex-1 py-4 items-center border-b-[3px] ${
+                isActive
+                  ? "border-blue-500 bg-blue-50/50"
+                  : "border-transparent"
               }`}
             >
               <Text
                 className={`font-semibold ${
-                  isActive ? "text-blue-500" : "text-slate-600"
+                  isActive ? "text-blue-600" : "text-slate-600"
                 }`}
               >
                 {tab.label}

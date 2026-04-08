@@ -8,18 +8,19 @@ import {
   FlatList,
   Image,
   RefreshControl,
+  ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { searchAndFilterServices } from "../../lib/api/services.api";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
-import { useDebounce } from "../../lib/hooks/useDebounce";
 import { COLORS } from "../../lib/constants/theme";
-import { formatPrice } from "../../lib/utils/format";
+import { useDebounce } from "../../lib/hooks/useDebounce";
 import { ItemProps } from "../../lib/types/custom.types";
 import { ServiceWithDetails } from "../../lib/types/database.types";
 import { FilterOptions } from "../../lib/types/filter.types";
+import { formatPrice } from "../../lib/utils/format";
 
 const { width } = Dimensions.get("window");
 const COLUMN_WIDTH = (width - 48) / 2;
@@ -191,17 +192,30 @@ export default function ServicesScreen({
   return (
     <View className="flex-1">
       {services.length === 0 ? (
-        <View className="flex-1 items-center justify-center bg-slate-50 px-8">
-          <AntDesign name="inbox" size={64} color={COLORS.slate400} />
-          <Text className="mt-4 text-slate-800 font-semibold text-lg">
-            {hasActiveFilter ? "No services found" : "No Services Yet"}
-          </Text>
-          <Text className="mt-2 text-slate-600 text-center">
-            {hasActiveFilter
-              ? "Try adjusting your search or filters"
-              : "Be the first to post a service! Tap the + button below."}
-          </Text>
-        </View>
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ flex: 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[COLORS.primary]}
+              tintColor={COLORS.primary}
+            />
+          }
+        >
+          <View className="flex-1 items-center justify-center bg-slate-50 px-8">
+            <AntDesign name="inbox" size={64} color={COLORS.slate400} />
+            <Text className="mt-4 text-slate-800 font-semibold text-lg">
+              {hasActiveFilter ? "No services found" : "No Services Yet"}
+            </Text>
+            <Text className="mt-2 text-slate-600 text-center">
+              {hasActiveFilter
+                ? "Try adjusting your search or filters"
+                : "Be the first to post a service! Tap the + button below."}
+            </Text>
+          </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={services}

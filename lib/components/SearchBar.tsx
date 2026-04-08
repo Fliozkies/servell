@@ -21,8 +21,8 @@ export default function SearchBar({
 
   return (
     <View
-      className={`flex-row items-center bg-white rounded-2xl px-4 mx-4 mb-3 border ${
-        isFocused ? "border-blue-500" : "border-gray-200"
+      className={`flex-row items-center bg-slate-50 rounded-2xl px-4 mx-4 mb-3 border ${
+        isFocused ? "border-blue-500" : "border-slate-200"
       }`}
     >
       <AntDesign

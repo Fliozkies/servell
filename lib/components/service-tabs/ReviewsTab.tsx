@@ -280,7 +280,7 @@ export default function ReviewsTab({
               setEditingReview(null);
               setWriteReviewVisible(true);
             }}
-            className="bg-blue-500 py-3 rounded-xl flex-row items-center justify-center"
+            style={styles.writeReviewBtn}
           >
             <AntDesign name="plus" size={18} color="#ffffff" />
             <Text className="ml-2 text-base font-semibold text-white">
@@ -457,6 +457,14 @@ const styles = StyleSheet.create({
   },
   filterBtnTextActive: {
     color: "#2563eb",
+  },
+  writeReviewBtn: {
+    backgroundColor: "#3b82f6",
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   yourReviewCard: {
     backgroundColor: "#fff",

@@ -39,6 +39,7 @@ export default function FilterBottomSheet({
     "category",
   );
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current; // ADD THIS LINE
 
   useEffect(() => {
     loadCategories();
@@ -49,12 +50,41 @@ export default function FilterBottomSheet({
   }, [currentFilters]);
 
   useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: visible ? 1 : 0,
-      useNativeDriver: true,
-      bounciness: 4,
-    }).start();
-  }, [visible, slideAnim]);
+    if (visible) {
+      // Reset backdrop to transparent
+      backdropOpacity.setValue(0);
+
+      // First animate slide
+      Animated.spring(slideAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        bounciness: 4,
+      }).start(() => {
+        // After slide completes, wait 100ms then darken backdrop
+        setTimeout(() => {
+          Animated.timing(backdropOpacity, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        }, 100);
+      });
+    } else {
+      // When closing, animate both together
+      Animated.parallel([
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          bounciness: 4,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible, slideAnim, backdropOpacity]);
 
   const loadCategories = async () => {
     try {
@@ -191,7 +221,17 @@ export default function FilterBottomSheet({
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
+      <Animated.View
+        style={[
+          styles.backdrop,
+          {
+            backgroundColor: backdropOpacity.interpolate({
+              inputRange: [0, 1],
+              outputRange: ["rgba(0,0,0,0.1)", "rgba(0,0,0,0.5)"],
+            }),
+          },
+        ]}
+      >
         <TouchableOpacity
           style={styles.backdropTouchable}
           activeOpacity={1}
@@ -398,7 +438,7 @@ export default function FilterBottomSheet({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -407,7 +447,7 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
+    // backgroundColor: "rgba(0,0,0,0.45)",
   },
   backdropTouchable: {
     position: "absolute",

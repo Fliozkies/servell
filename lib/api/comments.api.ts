@@ -319,6 +319,18 @@ export async function toggleCommentLike(commentId: string): Promise<void> {
         .eq("id", existingLike.id);
 
       if (error) throw error;
+
+      // Decrement like_count (floor at 0)
+      const { data: current } = await supabase
+        .from("service_comments")
+        .select("like_count")
+        .eq("id", commentId)
+        .single();
+      await supabase
+        .from("service_comments")
+        .update({ like_count: Math.max(0, (current?.like_count ?? 1) - 1) })
+        .eq("id", commentId);
+
       // Don't notify when unliking
     } else {
       // Like
@@ -328,6 +340,17 @@ export async function toggleCommentLike(commentId: string): Promise<void> {
       });
 
       if (error) throw error;
+
+      // Increment like_count
+      const { data: current } = await supabase
+        .from("service_comments")
+        .select("like_count")
+        .eq("id", commentId)
+        .single();
+      await supabase
+        .from("service_comments")
+        .update({ like_count: (current?.like_count ?? 0) + 1 })
+        .eq("id", commentId);
 
       // ✅ FIX: Notify the comment author about the like - INCLUDE service_id
       const { data: comment } = await supabase

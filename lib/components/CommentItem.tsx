@@ -44,9 +44,14 @@ export default function CommentItem({
   const [liking, setLiking] = useState(false);
   const [showReplies, setShowReplies] = useState(initiallyExpandReplies);
 
-  // Optimistic state for likes
+  // Optimistic state for parent comment likes
   const [localLikeCount, setLocalLikeCount] = useState(comment.like_count);
   const [localIsLiked, setLocalIsLiked] = useState(comment.user_has_liked);
+
+  // Optimistic state for replies
+  const [localReplies, setLocalReplies] = useState(comment.replies ?? []);
+
+  const [viewReply, setViewReply] = useState(false);
 
   const authorName = comment.profile?.first_name
     ? `${comment.profile.first_name} ${comment.profile.last_name || ""}`.trim()
@@ -70,8 +75,7 @@ export default function CommentItem({
     try {
       setLiking(true);
       await toggleCommentLike(comment.id);
-      // Success - update parent to sync with DB
-      onUpdate();
+      // No onUpdate() — optimistic state already reflects the change
     } catch (error) {
       console.error("Error liking comment:", error);
       // Rollback on error
@@ -107,8 +111,7 @@ export default function CommentItem({
   };
 
   const isAuthor = currentUserId === comment.user_id;
-  const hasReplies = comment.replies && comment.replies.length > 0;
-  const replyCount = comment.replies?.length || 0;
+  const hasReplies = localReplies.length > 0;
 
   return (
     <View style={[styles.container, highlight && styles.containerHighlight]}>
@@ -172,7 +175,7 @@ export default function CommentItem({
 
       <View className="flex-row mb-2">
         {/* for offsetting */}
-        <View className="w-10 mr-3" />
+        <View className="mr-13" />
 
         {/* ── Comment body ── */}
         <Text className="text-sm text-slate-700 mt-2">{comment.content}</Text>
@@ -187,16 +190,14 @@ export default function CommentItem({
             <View className="w-10 mr-3" />
 
             <TouchableOpacity
-              onPress={() => setShowReplies(!showReplies)}
+              onPress={() => {
+                setShowReplies(!showReplies);
+                setViewReply(!viewReply);
+              }}
               className="flex-row items-center"
             >
-              <AntDesign
-                name={showReplies ? "up" : "down"}
-                size={10}
-                color="#1877F2"
-              />
               <Text className="ml-1 text-sm font-semibold text-[#1877F2]">
-                {replyCount} {replyCount === 1 ? "reply" : "replies"}
+                {viewReply ? "Hide replies" : "View replies"}
               </Text>
             </TouchableOpacity>
           </>
@@ -210,11 +211,56 @@ export default function CommentItem({
         <View className="flex-row mt-2">
           <View className="w-5 mr-3" />
           <View className="flex-1">
-            {comment.replies!.map((reply) => {
+            {localReplies.map((reply) => {
               const replyAuthorName = reply.profile?.first_name
                 ? `${reply.profile.first_name} ${reply.profile.last_name || ""}`.trim()
                 : "Anonymous";
-              const isReplyLiked = reply.user_has_liked;
+
+              const handleReplyLike = async () => {
+                if (!currentUserId) {
+                  Alert.alert("Login Required", "Please log in to like");
+                  return;
+                }
+
+                // Snapshot for rollback
+                const prevLiked = reply.user_has_liked;
+                const prevCount = reply.like_count;
+
+                // Apply optimistically
+                setLocalReplies((prev) =>
+                  prev.map((r) =>
+                    r.id === reply.id
+                      ? {
+                          ...r,
+                          user_has_liked: !r.user_has_liked,
+                          like_count: r.user_has_liked
+                            ? r.like_count - 1
+                            : r.like_count + 1,
+                        }
+                      : r,
+                  ),
+                );
+
+                try {
+                  await toggleCommentLike(reply.id);
+                  // No onUpdate() — optimistic state already reflects the change
+                } catch (error) {
+                  console.error("Error liking reply:", error);
+                  // Rollback
+                  setLocalReplies((prev) =>
+                    prev.map((r) =>
+                      r.id === reply.id
+                        ? {
+                            ...r,
+                            user_has_liked: prevLiked,
+                            like_count: prevCount,
+                          }
+                        : r,
+                    ),
+                  );
+                  Alert.alert("Error", "Failed to like reply");
+                }
+              };
 
               return (
                 <View key={reply.id} className="mb-3">
@@ -244,31 +290,19 @@ export default function CommentItem({
                       </View>
 
                       <TouchableOpacity
-                        onPress={async () => {
-                          if (!currentUserId) {
-                            Alert.alert(
-                              "Login Required",
-                              "Please log in to like",
-                            );
-                            return;
-                          }
-                          try {
-                            await toggleCommentLike(reply.id);
-                            onUpdate();
-                          } catch (error) {
-                            console.error("Error liking reply:", error);
-                          }
-                        }}
+                        onPress={handleReplyLike}
                         className="flex-row items-center mt-1.5 ml-9"
                       >
                         <AntDesign
-                          name={isReplyLiked ? "like" : "like"}
+                          name={reply.user_has_liked ? "like" : "like"}
                           size={11}
-                          color={isReplyLiked ? "#1877F2" : "#94a3b8"}
+                          color={reply.user_has_liked ? "#1877F2" : "#94a3b8"}
                         />
                         <Text
                           className={`ml-1 text-[10px] font-semibold ${
-                            isReplyLiked ? "text-[#1877F2]" : "text-slate-400"
+                            reply.user_has_liked
+                              ? "text-[#1877F2]"
+                              : "text-slate-400"
                           }`}
                         >
                           {reply.like_count}

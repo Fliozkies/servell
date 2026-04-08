@@ -3,16 +3,7 @@
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Linking,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { getOrCreateConversation } from "../../lib/api/messaging.api";
+import { Alert, Image, Text, TouchableOpacity, View } from "react-native";
 import { supabase } from "../../lib/api/supabase";
 import CommentsTab from "../../lib/components/service-tabs/CommentsTab";
 import OverviewTab from "../../lib/components/service-tabs/OverviewTab";
@@ -44,7 +35,6 @@ export default function ServiceDetailScreen() {
   const currentUserId = useCurrentUserId();
   const [service, setService] = useState<ServiceWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
-  const [startingChat, setStartingChat] = useState(false);
   const [activeTab, setActiveTab] = useState<ServiceTab>(
     (tab as ServiceTab) || "overview",
   );
@@ -82,29 +72,6 @@ export default function ServiceDetailScreen() {
       setActiveTab(tab as ServiceTab);
     }
   }, [tab]);
-
-  const handleStartChat = async () => {
-    if (!service || !currentUserId) {
-      Alert.alert("Error", "Please log in to message the seller");
-      return;
-    }
-    if (currentUserId === service.user_id) {
-      Alert.alert("Info", "You cannot message yourself");
-      return;
-    }
-    try {
-      setStartingChat(true);
-      const conversation = await getOrCreateConversation({
-        service_id: service.id,
-        seller_id: service.user_id,
-      });
-      router.push(`/chat/${conversation.id}`);
-    } catch {
-      Alert.alert("Error", "Failed to start conversation");
-    } finally {
-      setStartingChat(false);
-    }
-  };
 
   const handleServiceUpdate = useCallback(
     () => loadService(true),
@@ -170,7 +137,11 @@ export default function ServiceDetailScreen() {
             display: activeTab === "overview" ? "flex" : "none",
           }}
         >
-          <OverviewTab service={service} />
+          <OverviewTab
+            service={service}
+            isOwnService={isOwnService}
+            currentUserId={currentUserId}
+          />
         </View>
         <View
           style={{
@@ -201,45 +172,6 @@ export default function ServiceDetailScreen() {
           />
         </View>
       </View>
-
-      {/* Action Buttons */}
-      {!isOwnService && (
-        <View className="bg-white border-t border-slate-200 p-4">
-          <View className="flex-row space-x-3">
-            {service.phone_number && (
-              <TouchableOpacity
-                onPress={() => Linking.openURL(`tel:${service.phone_number}`)}
-                className="flex-1 bg-slate-100 py-4 rounded-2xl flex-row items-center justify-center"
-              >
-                <Ionicons
-                  name="call-outline"
-                  size={20}
-                  color={COLORS.slate900}
-                />
-                <Text className="ml-2 text-base font-semibold text-slate-900">
-                  Call
-                </Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              onPress={handleStartChat}
-              disabled={startingChat}
-              className="flex-1 bg-blue-600 py-4 rounded-2xl flex-row items-center justify-center"
-            >
-              {startingChat ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <>
-                  <Ionicons name="chatbubble-outline" size={20} color="#fff" />
-                  <Text className="ml-2 text-base font-semibold text-white">
-                    Message
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

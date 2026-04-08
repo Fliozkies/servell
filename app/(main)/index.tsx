@@ -37,6 +37,12 @@ export default function MainScreen() {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
 
+  // Refresh keys to trigger re-rendering when clicking active tab
+  const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
+  const [messagesRefreshKey, setMessagesRefreshKey] = useState(0);
+  const [notificationsRefreshKey, setNotificationsRefreshKey] = useState(0);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+
   // Badge counts via extracted hook
   const { counts, resetNotifications, refreshMessages } = useUnreadCounts();
 
@@ -52,6 +58,30 @@ export default function MainScreen() {
   useEffect(() => {
     if (activeTab === "Message") refreshMessages();
   }, [activeTab, refreshMessages]);
+
+  // Handle tab press with refresh on active tab
+  const handleTabPress = (tab: PageName) => {
+    if (tab === activeTab) {
+      // Refresh current tab
+      switch (tab) {
+        case "Services":
+          setServicesRefreshKey((prev) => prev + 1);
+          break;
+        case "Message":
+          setMessagesRefreshKey((prev) => prev + 1);
+          refreshMessages();
+          break;
+        case "Notification":
+          setNotificationsRefreshKey((prev) => prev + 1);
+          break;
+        case "Profile":
+          setProfileRefreshKey((prev) => prev + 1);
+          break;
+      }
+    } else {
+      setActiveTab(tab);
+    }
+  };
 
   return (
     <SafeAreaView className="bg-white flex-1">
@@ -73,6 +103,7 @@ export default function MainScreen() {
           }}
         >
           <ServicesScreen
+            key={servicesRefreshKey}
             searchQuery={searchQuery}
             filterModalVisible={filterModalVisible}
             onFilterModalClose={() => setFilterModalVisible(false)}
@@ -87,7 +118,7 @@ export default function MainScreen() {
             display: activeTab === "Message" ? "flex" : "none",
           }}
         >
-          <ConversationsScreen />
+          <ConversationsScreen key={messagesRefreshKey} />
         </View>
 
         <View
@@ -96,7 +127,10 @@ export default function MainScreen() {
             display: activeTab === "Notification" ? "flex" : "none",
           }}
         >
-          <NotificationScreen onAllRead={resetNotifications} />
+          <NotificationScreen
+            key={notificationsRefreshKey}
+            onAllRead={resetNotifications}
+          />
         </View>
 
         <View
@@ -105,7 +139,7 @@ export default function MainScreen() {
             display: activeTab === "Profile" ? "flex" : "none",
           }}
         >
-          <ProfileScreen />
+          <ProfileScreen key={profileRefreshKey} />
         </View>
 
         {/* Post tab is mount/unmount — it's a form, no state to preserve */}
@@ -120,7 +154,7 @@ export default function MainScreen() {
       {activeTab !== "Post" && (
         <BottomNav
           currentTab={activeTab}
-          onTabPress={setActiveTab}
+          onTabPress={handleTabPress}
           unreadMessages={counts.messages}
           unreadNotifications={counts.notifications}
         />

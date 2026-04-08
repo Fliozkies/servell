@@ -29,7 +29,7 @@ const BottomNav = memo(function BottomNav({
 }: BottomNavProps) {
   return (
     <View>
-      <View className="flex-row items-center justify-between px-4 py-2 border-t-2 border-red-200">
+      <View className="flex-row items-center justify-between px-4 py-2">
         <NavButton
           name="Services"
           label="Services"
@@ -51,7 +51,7 @@ const BottomNav = memo(function BottomNav({
         <TouchableOpacity
           onPress={() => onTabPress("Post")}
           activeOpacity={0.8}
-          className="bg-[#1877F2] w-14 h-14 rounded-full"
+          className="bg-[#1877F2] w-10 h-10 rounded-full justify-center items-center"
           style={{
             shadowColor: "#818cf8",
             shadowOffset: { width: 0, height: 8 },

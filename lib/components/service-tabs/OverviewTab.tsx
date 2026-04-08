@@ -1,19 +1,59 @@
 // lib/components/service-tabs/OverviewTab.tsx
 import { AntDesign, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import { router } from "expo-router";
+import React, { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { getOrCreateConversation } from "../../api/messaging.api";
 import { ServiceWithDetails } from "../../types/database.types";
 import { ProfileAvatar } from "../ui/ProfileAvatar";
 
 type OverviewTabProps = {
   service: ServiceWithDetails;
+  isOwnService: boolean;
+  currentUserId: string | null;
 };
 
-export default function OverviewTab({ service }: OverviewTabProps) {
+export default function OverviewTab({
+  service,
+  isOwnService,
+  currentUserId,
+}: OverviewTabProps) {
+  const [startingChat, setStartingChat] = useState(false);
+
   const authorName = service.profile?.first_name
     ? `${service.profile.first_name} ${service.profile.last_name || ""}`.trim()
     : "Unknown";
   const categoryName = service.category?.name;
+
+  const handleStartChat = async () => {
+    if (!currentUserId) {
+      Alert.alert("Error", "Please log in to message the seller");
+      return;
+    }
+    if (currentUserId === service.user_id) {
+      Alert.alert("Info", "You cannot message yourself");
+      return;
+    }
+    try {
+      setStartingChat(true);
+      const conversation = await getOrCreateConversation({
+        service_id: service.id,
+        seller_id: service.user_id,
+      });
+      router.push(`/chat/${conversation.id}`);
+    } catch {
+      Alert.alert("Error", "Failed to start conversation");
+    } finally {
+      setStartingChat(false);
+    }
+  };
 
   return (
     <ScrollView
@@ -106,32 +146,49 @@ export default function OverviewTab({ service }: OverviewTabProps) {
           </View>
         )}
 
-        {/* ── Provider card ── */}
-        <View className="bg-white border border-slate-100 rounded-2xl p-4">
+        {/* ── Service Provider Card ── */}
+        <View className="bg-white border border-slate-100 rounded-2xl px-4 py-4 mb-4">
           <Text className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
             Service Provider
           </Text>
           <View className="flex-row items-center">
-            <ProfileAvatar profile={service.profile} size={40} />
-            <View className="ml-2 flex-1">
-              <Text className="text-sm font-bold text-slate-900">
+            <ProfileAvatar profile={service.profile} size={48} />
+            <View className="ml-3 flex-1">
+              <Text className="text-base font-bold text-slate-900">
                 {authorName}
               </Text>
-              {service.profile?.physis_verified ? (
-                <View className="flex-row items-center mt-0.5">
-                  <MaterialIcons name="verified" size={13} color="#10b981" />
-                  <Text className="ml-1 text-xs text-emerald-600 font-medium">
-                    PhilSys Verified
+              {service.profile?.physis_verified && (
+                <View className="flex-row items-center mt-1">
+                  <MaterialIcons name="verified" size={14} color="#1877F2" />
+                  <Text className="ml-1 text-xs text-slate-600">
+                    Verified Provider
                   </Text>
                 </View>
-              ) : (
-                <Text className="text-xs text-slate-400 mt-0.5">
-                  Not yet verified
-                </Text>
               )}
             </View>
           </View>
         </View>
+
+        {/* ── Message Button (only for non-owners) ── */}
+        {!isOwnService && (
+          <TouchableOpacity
+            onPress={handleStartChat}
+            disabled={startingChat}
+            className="bg-blue-600 py-4 rounded-2xl flex-row items-center justify-center mb-6"
+            activeOpacity={0.8}
+          >
+            {startingChat ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="chatbubble-outline" size={20} color="#fff" />
+                <Text className="ml-2 text-base font-semibold text-white">
+                  Message Seller
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );

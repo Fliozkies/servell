@@ -101,7 +101,7 @@ export default function WriteReviewModal({
         <KeyboardAvoidingView
           behavior="position"
           style={styles.kavWrap}
-          keyboardVerticalOffset={22}
+          keyboardVerticalOffset={0}
         >
           <View style={styles.sheet}>
             {/* Handle */}

@@ -29,6 +29,7 @@ export default function CreateServiceScreen({
   onCancel,
 }: CreateServiceProps) {
   const [submitting, setSubmitting] = useState(false);
+  const [customCategory, setCustomCategory] = useState(""); // ADD THIS
 
   const form = useServiceForm();
 
@@ -42,6 +43,16 @@ export default function CreateServiceScreen({
   }
 
   const handleSubmit = async () => {
+    // Check if "Others" is selected and custom category is empty
+    const selectedCategoryName = form.categories.find(
+      (c) => c.id === form.selectedCategory,
+    )?.name;
+
+    if (selectedCategoryName === "Others" && !customCategory.trim()) {
+      Alert.alert("Error", "Please specify your service category");
+      return;
+    }
+
     if (
       !validateServiceForm({
         title: form.title,
@@ -75,7 +86,12 @@ export default function CreateServiceScreen({
         price: form.price.trim() ? parseFloat(form.price) : null,
         image_url: imageUrl,
         category_id: form.selectedCategory,
-        tags: form.tags.length > 0 ? form.tags : null,
+        tags:
+          selectedCategoryName === "Others" && customCategory.trim()
+            ? [customCategory.trim(), ...form.tags]
+            : form.tags.length > 0
+              ? form.tags
+              : null,
         location: form.location.trim(),
         phone_number: form.phoneNumber.trim() || null,
         status: "active" as const,
@@ -190,6 +206,23 @@ export default function CreateServiceScreen({
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            {/* Custom Category Input (shown when "Others" is selected) */}
+            {form.categories.find((c) => c.id === form.selectedCategory)
+              ?.name === "Others" && (
+              <FormField label="Specify Your Category" required>
+                <TextInput
+                  value={customCategory}
+                  onChangeText={setCustomCategory}
+                  placeholder="e.g., Pet Care, Event Planning, Landscaping"
+                  className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
+                  placeholderTextColor={COLORS.slate400}
+                  maxLength={50}
+                />
+                <Text className="text-xs text-slate-500 mt-2">
+                  Please specify what type of service you&apos;re offering
+                </Text>
+              </FormField>
+            )}
           </FormField>
 
           <FormField label="Price (₱)">

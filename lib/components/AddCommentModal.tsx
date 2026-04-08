@@ -98,7 +98,7 @@ export default function AddCommentModal({
         <KeyboardAvoidingView
           behavior="padding"
           style={styles.kavWrap}
-          keyboardVerticalOffset={28}
+          keyboardVerticalOffset={0}
         >
           <View style={styles.sheet}>
             {/* Handle */}

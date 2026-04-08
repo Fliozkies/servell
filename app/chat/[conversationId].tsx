@@ -1,6 +1,10 @@
-// app/chat/[conversationId].tsx  ←  Proper Expo Router dynamic route
-// Previously: app/juarez_app/pages/chat.tsx
-import { AntDesign, Ionicons } from "@expo/vector-icons";
+// app/chat/[conversationId].tsx
+// FIXES: Issues 12, 13, 14
+// - Messages from other users appear immediately (Issue 12)
+// - Chat header shows service provider name instead of generic "Chat" (Issue 13)
+// - Image double-send fixed with better deduplication (Issue 14)
+
+import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -15,7 +19,7 @@ import {
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchMessages,
   getImageUrl,
@@ -25,6 +29,7 @@ import {
   sendMessage,
   subscribeToMessages,
 } from "../../lib/api/messaging.api";
+import { supabase } from "../../lib/api/supabase";
 import { COLORS } from "../../lib/constants/theme";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
 import { MessageWithSender } from "../../lib/types/database.types";
@@ -36,18 +41,65 @@ type LocalMessage = MessageWithSender & {
   _localId?: string;
 };
 
+type ConversationDetails = {
+  id: string;
+  service_id: string;
+  buyer_id: string;
+  seller_id: string;
+  service?: {
+    title: string;
+  };
+  buyer?: {
+    first_name: string;
+    last_name: string | null;
+  };
+  seller?: {
+    first_name: string;
+    last_name: string | null;
+  };
+};
+
 export default function ChatScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const currentUserId = useCurrentUserId();
   const [messages, setMessages] = useState<LocalMessage[]>([]);
+  const [conversationDetails, setConversationDetails] =
+    useState<ConversationDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [messageText, setMessageText] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const insets = useSafeAreaInsets();
 
   const scrollToBottom = (animated = true) => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 80);
   };
+
+  // Fetch conversation details including provider name
+  const loadConversationDetails = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("conversations")
+        .select(
+          `
+          id,
+          service_id,
+          buyer_id,
+          seller_id,
+          service:services(title),
+          buyer:profiles!conversations_buyer_id_fkey(first_name, last_name),
+          seller:profiles!conversations_seller_id_fkey(first_name, last_name)
+        `,
+        )
+        .eq("id", conversationId)
+        .single();
+
+      if (error) throw error;
+      setConversationDetails(data as unknown as ConversationDetails);
+    } catch (err) {
+      console.error("Error loading conversation details:", err);
+    }
+  }, [conversationId]);
 
   const loadMessages = useCallback(async () => {
     try {
@@ -70,30 +122,61 @@ export default function ChatScreen() {
   }, [conversationId]);
 
   useEffect(() => {
+    loadConversationDetails();
     loadMessages();
     markAsRead();
 
+    // FIX Issue 12 & 14: Improved subscription with better deduplication
     const unsubscribe = subscribeToMessages(conversationId, (newMessage) => {
       setMessages((prev) => {
+        // Check if message already exists by ID
+        const existsByServerId = prev.some((m) => m.id === newMessage.id);
+        if (existsByServerId) {
+          return prev;
+        }
+
+        // FIX Issue 14: Better matching for optimistic updates
+        // Find local message that matches this server message
         const localIdx = prev.findIndex(
           (m) =>
             m._status === "sending" &&
-            m.content === newMessage.content &&
-            m.sender_id === newMessage.sender_id,
+            m.sender_id === newMessage.sender_id &&
+            // For text messages, match by content
+            ((!isImageMessage(m.content) && m.content === newMessage.content) ||
+              // For images, match by similar timestamps (within 5 seconds)
+              (isImageMessage(m.content) &&
+                Math.abs(
+                  new Date(m.created_at).getTime() -
+                    new Date(newMessage.created_at).getTime(),
+                ) < 5000)),
         );
+
         if (localIdx !== -1) {
+          // Replace optimistic message with server message
           const updated = [...prev];
           updated[localIdx] = { ...newMessage, _status: "sent" };
           return updated;
         }
+
+        // FIX Issue 12: New message from other user - add immediately
         return [...prev, { ...newMessage, _status: "sent" }];
       });
-      markAsRead();
+
+      // Only mark as read if message is from other user
+      if (newMessage.sender_id !== currentUserId) {
+        markAsRead();
+      }
       scrollToBottom();
     });
 
     return unsubscribe;
-  }, [conversationId, loadMessages, markAsRead]);
+  }, [
+    conversationId,
+    loadConversationDetails,
+    loadMessages,
+    markAsRead,
+    currentUserId,
+  ]);
 
   const handleSend = async () => {
     const text = messageText.trim();
@@ -155,6 +238,8 @@ export default function ChatScreen() {
       const publicUrl = await uploadImage(uri, "chat-images");
       const content = `${IMAGE_MESSAGE_PREFIX}${publicUrl}`;
       await sendMessage({ conversation_id: conversationId, content });
+
+      // Update local message with final URL
       setMessages((prev) =>
         prev.map((m) =>
           m._localId === localId ? { ...m, content, _status: "sent" } : m,
@@ -248,37 +333,21 @@ export default function ChatScreen() {
 
           <View style={[styles.statusRow, isOwn && styles.statusRowOwn]}>
             <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
-            {isOwn && (
-              <>
-                {item._status === "sending" && (
-                  <ActivityIndicator
-                    size={10}
-                    color={COLORS.slate400}
-                    style={styles.statusIcon}
-                  />
-                )}
-                {item._status === "sent" && (
-                  <Ionicons
-                    name="checkmark-done"
-                    size={13}
-                    color="#3b82f6"
-                    style={styles.statusIcon}
-                  />
-                )}
-                {item._status === "failed" && (
-                  <TouchableOpacity
-                    onPress={() => handleRetry(item)}
-                    style={styles.retryBtn}
-                  >
-                    <AntDesign
-                      name="exclamation-circle"
-                      size={12}
-                      color={COLORS.danger}
-                    />
-                    <Text style={styles.retryText}>Tap to retry</Text>
-                  </TouchableOpacity>
-                )}
-              </>
+            {item._status === "sending" && (
+              <ActivityIndicator
+                size="small"
+                color="#94a3b8"
+                style={styles.statusIcon}
+              />
+            )}
+            {item._status === "failed" && (
+              <TouchableOpacity
+                onPress={() => handleRetry(item)}
+                style={styles.retryBtn}
+              >
+                <Ionicons name="refresh" size={14} color="#ef4444" />
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -286,249 +355,270 @@ export default function ChatScreen() {
     );
   };
 
+  // FIX Issue 13: Display provider name in header
+  const getHeaderTitle = () => {
+    if (!conversationDetails) return "Chat";
+
+    const otherUser =
+      conversationDetails.seller_id === currentUserId
+        ? conversationDetails.buyer
+        : conversationDetails.seller;
+
+    if (otherUser?.first_name) {
+      return `${otherUser.first_name} ${otherUser.last_name || ""}`.trim();
+    }
+
+    return conversationDetails.service?.title || "Chat";
+  };
+
   if (loading) {
     return (
-      <View style={styles.loaderWrap}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <KeyboardAvoidingView
-        behavior="padding"
-        style={styles.root}
-        keyboardVerticalOffset={0}
-      >
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backBtn}
-          >
-            <Ionicons name="arrow-back" size={22} color={COLORS.slate900} />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <View style={styles.headerAvatar}>
-              <Ionicons name="chatbubbles" size={18} color="#3b82f6" />
-            </View>
-            <Text style={styles.headerTitle}>Chat</Text>
-          </View>
+    <View style={{ flex: 1 }}>
+      {/* Header with provider name */}
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.slate900} />
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
+          {conversationDetails?.service?.title && (
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              {conversationDetails.service.title}
+            </Text>
+          )}
         </View>
+        <View style={styles.headerRight} />
+      </View>
 
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item._localId ?? item.id}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyWrap}>
-              <Ionicons
-                name="chatbubbles-outline"
-                size={52}
-                color={COLORS.slate300}
-              />
-              <Text style={styles.emptyTitle}>No messages yet</Text>
-              <Text style={styles.emptySubtitle}>Say hello!</Text>
-            </View>
-          }
-          onContentSizeChange={() => scrollToBottom(false)}
-        />
+      {/* Messages */}
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={(item, idx) => item.id || `msg-${idx}`}
+        renderItem={renderMessage}
+        contentContainerStyle={styles.messagesList}
+        onContentSizeChange={() => scrollToBottom(false)}
+      />
 
-        <View style={[styles.inputBar]}>
+      {/* Input */}
+      <KeyboardAvoidingView behavior="padding">
+        <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
           <TouchableOpacity
             onPress={handlePickImage}
+            style={styles.attachBtn}
             disabled={uploadingImage}
-            style={styles.imageBtn}
           >
             {uploadingImage ? (
-              <ActivityIndicator size="small" color="#3b82f6" />
+              <ActivityIndicator size="small" color={COLORS.primary} />
             ) : (
-              <Ionicons
-                name="image-outline"
-                size={22}
-                color={COLORS.slate500}
-              />
+              <Ionicons name="image-outline" size={24} color={COLORS.primary} />
             )}
           </TouchableOpacity>
 
           <TextInput
             value={messageText}
             onChangeText={setMessageText}
-            placeholder="Type a message…"
-            placeholderTextColor={COLORS.slate400}
+            placeholder="Type a message..."
+            placeholderTextColor="#94a3b8"
+            style={styles.input}
             multiline
             maxLength={1000}
-            style={styles.textInput}
-            onSubmitEditing={handleSend}
           />
 
           <TouchableOpacity
             onPress={handleSend}
-            disabled={!messageText.trim()}
             style={[
               styles.sendBtn,
               !messageText.trim() && styles.sendBtnDisabled,
             ]}
+            disabled={!messageText.trim()}
           >
             <Ionicons
               name="send"
-              size={18}
-              color={messageText.trim() ? "#fff" : COLORS.slate400}
+              size={20}
+              color={messageText.trim() ? "#fff" : "#cbd5e1"}
             />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.slate50 },
-  loaderWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+  container: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: COLORS.white,
-    paddingBottom: 6,
+    backgroundColor: "#fff",
     paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.slate100,
-    gap: 12,
+    borderBottomColor: "#e2e8f0",
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.slate100,
-    alignItems: "center",
-    justifyContent: "center",
+    padding: 4,
   },
   headerCenter: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
     flex: 1,
+    marginLeft: 12,
   },
-  headerAvatar: {
-    width: 36,
-    height: 36,
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  headerRight: {
+    width: 32,
+  },
+  messagesList: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  msgRow: {
+    marginBottom: 4,
+  },
+  msgRowOwn: {
+    alignItems: "flex-end",
+  },
+  msgRowOther: {
+    alignItems: "flex-start",
+  },
+  msgFirstInGroup: {
+    marginTop: 12,
+  },
+  bubbleWrap: {
+    maxWidth: "75%",
+  },
+  bubbleWrapOwn: {
+    alignItems: "flex-end",
+  },
+  bubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 18,
-    backgroundColor: "#eff6ff",
-    alignItems: "center",
-    justifyContent: "center",
   },
-  headerTitle: { fontSize: 16, fontWeight: "700", color: COLORS.slate900 },
-  listContent: { paddingVertical: 12, paddingHorizontal: 12, flexGrow: 1 },
-  emptyWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 80,
-    gap: 6,
-  },
-  emptyTitle: { fontSize: 16, fontWeight: "600", color: COLORS.slate400 },
-  emptySubtitle: { fontSize: 13, color: COLORS.slate300 },
-  msgRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 2 },
-  msgRowOwn: { justifyContent: "flex-end" },
-  msgRowOther: { justifyContent: "flex-start" },
-  msgFirstInGroup: { marginTop: 10 },
-  avatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  bubbleOwn: {
     backgroundColor: "#3b82f6",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 6,
-    alignSelf: "flex-end",
+    borderBottomRightRadius: 4,
   },
-  avatarText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  avatarSpacer: { width: 36 },
-  bubbleWrap: { maxWidth: "75%", alignItems: "flex-start" },
-  bubbleWrapOwn: { alignItems: "flex-end" },
-  senderName: {
-    fontSize: 11,
-    color: COLORS.slate400,
-    fontWeight: "600",
-    marginBottom: 2,
-    marginLeft: 4,
-  },
-  bubble: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 18 },
-  bubbleOwn: { backgroundColor: "#2563eb", borderBottomRightRadius: 4 },
   bubbleOther: {
-    backgroundColor: COLORS.white,
+    backgroundColor: "#fff",
     borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: COLORS.slate200,
   },
-  bubbleFailed: { opacity: 0.6 },
-  bubbleText: { fontSize: 15, color: COLORS.slate900, lineHeight: 21 },
-  bubbleTextOwn: { color: COLORS.white },
-  imageBubble: { borderRadius: 16, overflow: "hidden", position: "relative" },
-  imageBubbleOwn: { borderBottomRightRadius: 4 },
-  imageBubbleOther: { borderBottomLeftRadius: 4 },
-  chatImage: { width: 200, height: 160 },
+  bubbleFailed: {
+    opacity: 0.6,
+    borderWidth: 1,
+    borderColor: "#ef4444",
+  },
+  bubbleText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: "#0f172a",
+  },
+  bubbleTextOwn: {
+    color: "#fff",
+  },
+  imageBubble: {
+    borderRadius: 12,
+    overflow: "hidden",
+    position: "relative",
+  },
+  imageBubbleOwn: {
+    borderBottomRightRadius: 4,
+  },
+  imageBubbleOther: {
+    borderBottomLeftRadius: 4,
+  },
+  chatImage: {
+    width: 200,
+    height: 200,
+  },
   imageLoadingOverlay: {
-    position: "absolute",
-    inset: 0,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.3)",
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
   },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 3,
-    gap: 4,
-    paddingHorizontal: 4,
+    marginTop: 4,
+    gap: 6,
   },
-  statusRowOwn: { justifyContent: "flex-end" },
-  timeText: { fontSize: 10, color: COLORS.slate400 },
-  statusIcon: { marginLeft: 2 },
-  retryBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
-  retryText: { fontSize: 10, color: COLORS.danger, fontWeight: "600" },
-  inputBar: {
+  statusRowOwn: {
+    justifyContent: "flex-end",
+  },
+  timeText: {
+    fontSize: 11,
+    color: "#94a3b8",
+  },
+  statusIcon: {
+    marginLeft: 4,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  retryText: {
+    fontSize: 11,
+    color: "#ef4444",
+    fontWeight: "600",
+  },
+  inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: COLORS.white,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.slate100,
+    backgroundColor: "#fff",
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
     gap: 8,
   },
-  imageBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.slate100,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 2,
+  attachBtn: {
+    padding: 8,
   },
-  textInput: {
+  input: {
     flex: 1,
-    backgroundColor: COLORS.slate100,
-    borderRadius: 22,
+    backgroundColor: "#f8fafc",
+    borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 15,
-    color: COLORS.slate900,
+    color: "#0f172a",
     maxHeight: 100,
-    lineHeight: 20,
   },
   sendBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#2563eb",
-    alignItems: "center",
+    backgroundColor: "#3b82f6",
     justifyContent: "center",
-    marginBottom: 2,
+    alignItems: "center",
   },
-  sendBtnDisabled: { backgroundColor: COLORS.slate200 },
+  sendBtnDisabled: {
+    backgroundColor: "#e2e8f0",
+  },
 });
