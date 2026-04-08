@@ -44,7 +44,6 @@ app-example
 /android
 
 #files
-*.zip
 backup
-*.txt
+query.txt
 docx
