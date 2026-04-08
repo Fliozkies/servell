@@ -8,10 +8,10 @@
       "developmentClient": true,
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk" // easier to install directly on devices
       },
       "ios": {
-        "simulator": false
+        "simulator": false // build for real devices (default anyway)
       }
     },
     "preview": {
