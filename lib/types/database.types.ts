@@ -28,6 +28,8 @@ export type Service = {
   category_id: string | null;
   tags: string[] | null;
   location: string;
+  latitude: number | null;
+  longitude: number | null;
   phone_number: string | null;
   rating: number;
   review_count: number;
@@ -40,6 +42,7 @@ export type Service = {
 export type ServiceWithDetails = Service & {
   category?: Category;
   profile?: Profile;
+  _distanceKm?: number | null; // computed client-side when sorting by nearest
 };
 
 export type Review = {
@@ -63,6 +66,8 @@ export type CreateServiceInput = {
   category_id: string;
   tags?: string[];
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
   phone_number?: string;
 };
 

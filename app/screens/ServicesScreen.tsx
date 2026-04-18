@@ -1,5 +1,5 @@
 // app/screens/ServicesScreen.tsx
-import { AntDesign } from "@expo/vector-icons";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -36,7 +36,8 @@ const ServiceCard = ({
   author,
   image,
   reviewCount,
-}: ItemProps & { id: string }) => (
+  distanceKm,
+}: ItemProps & { id: string; distanceKm?: number | null }) => (
   <TouchableOpacity
     onPress={() => router.push(`/service/${id}`)}
     style={{ width: COLUMN_WIDTH }}
@@ -65,6 +66,30 @@ const ServiceCard = ({
           {reviewCount > 0 ? ` (${reviewCount})` : ""}
         </Text>
       </View>
+      {/* Distance badge */}
+      {distanceKm != null && (
+        <View
+          style={{
+            position: "absolute",
+            bottom: 8,
+            right: 8,
+            backgroundColor: "rgba(24,119,242,0.85)",
+            borderRadius: 10,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 2,
+          }}
+        >
+          <Ionicons name="location-outline" size={9} color="#fff" />
+          <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>
+            {distanceKm < 1
+              ? `${Math.round(distanceKm * 1000)}m`
+              : `${distanceKm.toFixed(1)}km`}
+          </Text>
+        </View>
+      )}
     </View>
 
     <View className="p-3 pt-2.5">
@@ -130,6 +155,7 @@ export default function ServicesScreen({
         minRating: filters.minRating,
         location: filters.location,
         sortBy: filters.sortBy,
+        userLocation: filters.userLocation,
       });
       setServices(data);
     } catch {
@@ -146,6 +172,7 @@ export default function ServicesScreen({
     filters.minRating,
     filters.location,
     filters.sortBy,
+    filters.userLocation,
   ]);
 
   useEffect(() => {
@@ -178,7 +205,7 @@ export default function ServicesScreen({
   if (error && !refreshing) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-50 px-8">
-        <AntDesign name="exclamation-circle" size={48} color={COLORS.danger} />
+        <AntDesign name="exclamationcircle" size={48} color={COLORS.danger} />
         <Text className="mt-4 text-slate-800 font-semibold text-center">
           {error}
         </Text>
@@ -245,6 +272,9 @@ export default function ServicesScreen({
               }
               image={item.image_url}
               reviewCount={item.review_count}
+              distanceKm={
+                filters.sortBy === "nearest" ? item._distanceKm : null
+              }
             />
           )}
         />

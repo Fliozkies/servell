@@ -3,13 +3,13 @@ import {
   Bell,
   Home,
   LucideProps,
+  Map,
   MessageSquare,
   Plus,
   User,
 } from "lucide-react-native";
 import React, { memo } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
-// import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../constants/theme";
 import { PageName } from "../types/custom.types";
 import { formatBadge } from "../utils/format";
@@ -29,7 +29,7 @@ const BottomNav = memo(function BottomNav({
 }: BottomNavProps) {
   return (
     <View>
-      <View className="flex-row items-center justify-between px-4 py-2">
+      <View className="flex-row items-center justify-between px-2 py-2">
         <NavButton
           name="Services"
           label="Services"
@@ -39,12 +39,11 @@ const BottomNav = memo(function BottomNav({
         />
 
         <NavButton
-          label="Alerts"
-          name="Notification"
-          active={currentTab === "Notification"}
-          onPress={() => onTabPress("Notification")}
-          icon={<Bell size={22} />}
-          badgeCount={unreadNotifications}
+          name="Map"
+          label="Map"
+          active={currentTab === "Map"}
+          onPress={() => onTabPress("Map")}
+          icon={<Map size={22} />}
         />
 
         {/* Central FAB */}

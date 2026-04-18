@@ -1,4 +1,6 @@
 import AntDesign from "@expo/vector-icons/AntDesign";
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -16,6 +18,7 @@ import {
   FilterOptions,
   RATING_OPTIONS,
   SORT_OPTIONS,
+  UserLocation,
 } from "../types/filter.types";
 
 type FilterBottomSheetProps = {
@@ -38,8 +41,9 @@ export default function FilterBottomSheet({
   const [expandedSection, setExpandedSection] = useState<AccordionKey | null>(
     "category",
   );
+  const [locationLoading, setLocationLoading] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current; // ADD THIS LINE
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadCategories();
@@ -107,8 +111,37 @@ export default function FilterBottomSheet({
       minRating: null,
       location: "",
       sortBy: "newest",
+      userLocation: null,
     };
     setFilters(clearedFilters);
+  };
+
+  const handleSortChange = async (value: FilterOptions["sortBy"]) => {
+    if (value === "nearest") {
+      setLocationLoading(true);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          // Still set sortBy but without coords — will degrade gracefully
+          updateFilter("sortBy", "nearest");
+          return;
+        }
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const userLocation: UserLocation = {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        };
+        setFilters((prev) => ({ ...prev, sortBy: "nearest", userLocation }));
+      } catch {
+        updateFilter("sortBy", "nearest");
+      } finally {
+        setLocationLoading(false);
+      }
+    } else {
+      setFilters((prev) => ({ ...prev, sortBy: value, userLocation: null }));
+    }
   };
 
   const updateFilter = (key: keyof FilterOptions, value: any) => {
@@ -401,28 +434,46 @@ export default function FilterBottomSheet({
               {renderSectionHeader("sort", "Sort By", "swap")}
               {expandedSection === "sort" && (
                 <View style={styles.sectionBody}>
-                  {SORT_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option.value}
-                      onPress={() => updateFilter("sortBy", option.value)}
-                      style={styles.sortRow}
-                    >
-                      <Text
-                        style={[
-                          styles.sortLabel,
-                          filters.sortBy === option.value &&
-                            styles.sortLabelActive,
-                        ]}
+                  {SORT_OPTIONS.map((option) => {
+                    const isNearest = option.value === "nearest";
+                    const isActive = filters.sortBy === option.value;
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        onPress={() => handleSortChange(option.value)}
+                        style={styles.sortRow}
+                        disabled={isNearest && locationLoading}
                       >
-                        {option.label}
-                      </Text>
-                      {filters.sortBy === option.value && (
-                        <View style={styles.sortCheck}>
-                          <AntDesign name="check" size={12} color="#3b82f6" />
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          {isNearest && (
+                            <Ionicons
+                              name="location-outline"
+                              size={15}
+                              color={isActive ? "#1d4ed8" : "#64748b"}
+                            />
+                          )}
+                          <Text
+                            style={[
+                              styles.sortLabel,
+                              isActive && styles.sortLabelActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                          {isNearest && locationLoading && (
+                            <Text style={{ fontSize: 11, color: "#94a3b8" }}>
+                              Getting location…
+                            </Text>
+                          )}
                         </View>
-                      )}
-                    </TouchableOpacity>
-                  ))}
+                        {isActive && !locationLoading && (
+                          <View style={styles.sortCheck}>
+                            <AntDesign name="check" size={12} color="#3b82f6" />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               )}
             </View>

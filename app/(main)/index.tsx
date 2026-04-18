@@ -8,6 +8,7 @@ import { PageName } from "../../lib/types/custom.types";
 import { FilterOptions } from "../../lib/types/filter.types";
 import ConversationsScreen from "../screens/ConversationsScreen";
 import CreateServiceScreen from "../screens/CreateServiceScreen";
+import MapScreen from "../screens/MapScreen";
 import NotificationScreen from "../screens/NotificationScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import ServicesScreen from "../screens/ServicesScreen";
@@ -18,6 +19,7 @@ const DEFAULT_FILTERS: FilterOptions = {
   minRating: null,
   location: "",
   sortBy: "newest",
+  userLocation: null,
 };
 
 /**
@@ -39,6 +41,7 @@ export default function MainScreen() {
 
   // Refresh keys to trigger re-rendering when clicking active tab
   const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
+  const [mapRefreshKey, setMapRefreshKey] = useState(0);
   const [messagesRefreshKey, setMessagesRefreshKey] = useState(0);
   const [notificationsRefreshKey, setNotificationsRefreshKey] = useState(0);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
@@ -52,7 +55,8 @@ export default function MainScreen() {
     filters.priceRange.max !== null ||
     filters.minRating !== null ||
     (filters.location && filters.location.trim() !== "") ||
-    filters.sortBy !== "newest";
+    filters.sortBy !== "newest" ||
+    filters.userLocation !== null;
 
   // When the user navigates to Messages, refresh unread count
   useEffect(() => {
@@ -66,6 +70,9 @@ export default function MainScreen() {
       switch (tab) {
         case "Services":
           setServicesRefreshKey((prev) => prev + 1);
+          break;
+        case "Map":
+          setMapRefreshKey((prev) => prev + 1);
           break;
         case "Message":
           setMessagesRefreshKey((prev) => prev + 1);
@@ -110,6 +117,15 @@ export default function MainScreen() {
             filters={filters}
             onFiltersChange={setFilters}
           />
+        </View>
+
+        <View
+          style={{
+            flex: 1,
+            display: activeTab === "Map" ? "flex" : "none",
+          }}
+        >
+          <MapScreen key={mapRefreshKey} />
         </View>
 
         <View

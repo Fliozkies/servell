@@ -1,5 +1,6 @@
 export type PageName =
   | "Services"
+  | "Map"
   | "Notification"
   | "Message"
   | "Post"

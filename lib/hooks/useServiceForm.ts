@@ -9,6 +9,8 @@ export interface ServiceFormState {
   description: string;
   price: string;
   location: string;
+  latitude: number | null;
+  longitude: number | null;
   phoneNumber: string;
   tags: string[];
   currentTag: string;
@@ -21,6 +23,7 @@ export interface ServiceFormActions {
   setDescription: (v: string) => void;
   setPrice: (v: string) => void;
   setLocation: (v: string) => void;
+  setCoordinates: (lat: number | null, lng: number | null) => void;
   setPhoneNumber: (v: string) => void;
   setCurrentTag: (v: string) => void;
   setSelectedCategory: (v: string | null) => void;
@@ -49,6 +52,12 @@ export function useServiceForm(
     initialService?.price != null ? String(initialService.price) : "",
   );
   const [location, setLocation] = useState(initialService?.location ?? "");
+  const [latitude, setLatitude] = useState<number | null>(
+    initialService?.latitude ?? null,
+  );
+  const [longitude, setLongitude] = useState<number | null>(
+    initialService?.longitude ?? null,
+  );
   const [phoneNumber, setPhoneNumber] = useState(
     initialService?.phone_number ?? "",
   );
@@ -67,6 +76,11 @@ export function useServiceForm(
       .catch(() => Alert.alert("Error", "Failed to load categories"))
       .finally(() => setLoadingCategories(false));
   }, []);
+
+  const setCoordinates = (lat: number | null, lng: number | null) => {
+    setLatitude(lat);
+    setLongitude(lng);
+  };
 
   const handleAddTag = () => {
     const trimmed = currentTag.trim().toLowerCase();
@@ -96,6 +110,8 @@ export function useServiceForm(
     description,
     price,
     location,
+    latitude,
+    longitude,
     phoneNumber,
     tags,
     currentTag,
@@ -105,6 +121,7 @@ export function useServiceForm(
     setDescription,
     setPrice,
     setLocation,
+    setCoordinates,
     setPhoneNumber,
     setCurrentTag,
     setSelectedCategory,

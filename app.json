@@ -11,7 +11,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.xfliozkies.servell",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Servell needs your location to show services near you and to let you pin your service location on the map."
       }
     },
     "android": {
@@ -23,7 +24,11 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.xfliozkies.servell",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -31,6 +36,12 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Servell needs your location to show services near you."
+        }
+      ],
       [
         "expo-splash-screen",
         {
