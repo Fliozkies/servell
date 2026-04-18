@@ -31,8 +31,7 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
-.env
+
 
 # typescript
 *.tsbuildinfo
@@ -47,4 +46,5 @@ app-example
 backup
 query.txt
 docx
+.env
 servell_with_maps*

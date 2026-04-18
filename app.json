@@ -25,10 +25,12 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.xfliozkies.servell",
       "softwareKeyboardLayoutMode": "resize",
-      "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ]
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo"
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -53,6 +55,13 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-web-browser",
+      [
+        "react-native-maps",
+        { "googleMapsApiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo" }
       ]
     ],
     "experiments": {
