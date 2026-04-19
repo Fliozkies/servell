@@ -241,7 +241,7 @@ export function subscribeToConversations(
   callback: (conversation: Conversation) => void,
 ) {
   const channel = supabase
-    .channel(`conversations:${userId}`)
+    .channel(`conversations:${userId}:${Date.now()}`)
     .on(
       "postgres_changes",
       {
