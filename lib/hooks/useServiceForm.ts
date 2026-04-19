@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { fetchCategories } from "../api/services.api";
 import { Category, Service } from "../types/database.types";
-import { pickImage } from "../utils/imageUtils";
+import { PickedImage, pickImage } from "../utils/imageUtils";
 
 export interface ServiceFormState {
   title: string;
@@ -14,7 +14,7 @@ export interface ServiceFormState {
   phoneNumber: string;
   tags: string[];
   currentTag: string;
-  selectedImage: string | null;
+  selectedImage: PickedImage | null; // now holds uri + base64 + mimeType
   selectedCategory: string | null;
 }
 
@@ -34,13 +34,6 @@ export interface ServiceFormActions {
   loadingCategories: boolean;
 }
 
-/**
- * Shared form state and helpers used by both CreateService screen
- * and the EditServiceModal inside Profile_page.
- *
- * Eliminates the near-identical state + tag/image logic that was
- * copy-pasted across both components.
- */
 export function useServiceForm(
   initialService?: Service | null,
 ): ServiceFormState & ServiceFormActions {
@@ -63,7 +56,7 @@ export function useServiceForm(
   );
   const [tags, setTags] = useState<string[]>(initialService?.tags ?? []);
   const [currentTag, setCurrentTag] = useState("");
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<PickedImage | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(
     initialService?.category_id ?? null,
   );
@@ -133,10 +126,6 @@ export function useServiceForm(
   };
 }
 
-/**
- * Validates the service form fields.
- * Shows an Alert for the first failing rule.
- */
 export function validateServiceForm(fields: {
   title: string;
   description: string;

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+
+  <!-- Background rounded square -->
+  <rect x="0" y="0" width="1024" height="1024" rx="230" fill="#EEF4FF"/>
+
+  <!-- Pin + checkmark centered with padding -->
+  <g transform="translate(512, 500) scale(2.2)">
+    <ellipse cx="0" cy="162" rx="34" ry="10" fill="#1877F2" opacity="0.12"/>
+    <path d="M0 -148 C-56 -148 -100 -104 -100 -52 C-100 16 0 148 0 148 C0 148 100 16 100 -52 C100 -104 56 -148 0 -148 Z" fill="#1877F2"/>
+    <circle cx="0" cy="-58" r="58" fill="white"/>
+    <polyline points="-28,-58 -10,-36 34,-82" fill="none" stroke="#1877F2" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+</svg>

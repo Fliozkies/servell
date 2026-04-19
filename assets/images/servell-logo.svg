@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Drop shadow -->
+  <ellipse cx="256" cy="422" rx="52" ry="14" fill="#1877F2" opacity="0.13"/>
+
+  <!-- Pin body -->
+  <path d="M256 80 C196 80 148 128 148 188 C148 262 256 432 256 432 C256 432 364 262 364 188 C364 128 316 80 256 80 Z" fill="#1877F2"/>
+
+  <!-- Inner white circle -->
+  <circle cx="256" cy="182" r="62" fill="white"/>
+
+  <!-- Checkmark -->
+  <polyline points="226,182 247,204 288,156" fill="none" stroke="#1877F2" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

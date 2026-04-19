@@ -16,6 +16,32 @@ import { fetchServices } from "../../lib/api/services.api";
 import { COLORS } from "../../lib/constants/theme";
 import { ServiceWithDetails } from "../../lib/types/database.types";
 
+// Hides all Google POI markers, transit icons, and business labels
+const CLEAN_MAP_STYLE = [
+  {
+    featureType: "poi",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.attraction", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.government", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.medical", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "poi.park",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  { featureType: "poi.place_of_worship", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.school", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.sports_complex", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "transit",
+    elementType: "labels.icon",
+    stylers: [{ visibility: "off" }],
+  },
+];
+
 // Digos City default center
 const DIGOS_REGION: Region = {
   latitude: 6.7494,
@@ -30,7 +56,9 @@ const LOCATION_UPDATE_DISTANCE_M = 30;
 
 export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
-  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const locationSubscription = useRef<Location.LocationSubscription | null>(
+    null,
+  );
 
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +74,9 @@ export default function MapScreen() {
     try {
       const data = await fetchServices();
       // Only keep services that have been pinned
-      setServices(data.filter((s) => s.latitude != null && s.longitude != null));
+      setServices(
+        data.filter((s) => s.latitude != null && s.longitude != null),
+      );
     } catch {
       // Non-fatal — map still works without services
     } finally {
@@ -142,8 +172,11 @@ export default function MapScreen() {
         ref={mapRef}
         style={{ flex: 1 }}
         initialRegion={DIGOS_REGION}
+        customMapStyle={CLEAN_MAP_STYLE}
         showsUserLocation={false} // we draw our own marker for full control
         showsMyLocationButton={false}
+        showsPointsOfInterests={false}
+        showsBuildings={false}
         onTouchStart={() => setCenteredOnUser(false)}
       >
         {/* ── User location marker (red ribbon / pin) ── */}
@@ -212,10 +245,7 @@ export default function MapScreen() {
 
       {/* ── Recenter button ── */}
       <TouchableOpacity
-        style={[
-          styles.recenterBtn,
-          centeredOnUser && styles.recenterBtnActive,
-        ]}
+        style={[styles.recenterBtn, centeredOnUser && styles.recenterBtnActive]}
         onPress={handleRecenter}
         activeOpacity={0.8}
       >
@@ -433,7 +463,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "flex-end",
-    paddingBottom: 40,
+    paddingBottom: 90,
     pointerEvents: "none",
   },
   emptyCard: {

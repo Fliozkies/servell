@@ -97,7 +97,9 @@ export default function MainScreen() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onFilterPress={() => setFilterModalVisible(true)}
+          onNotificationPress={() => setActiveTab("Notification")}
           hasActiveFilters={!!hasActiveFilters}
+          unreadNotifications={counts.notifications}
         />
       )}
 

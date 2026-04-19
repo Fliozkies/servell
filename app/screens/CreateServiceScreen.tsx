@@ -15,7 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import MapView, { Marker, MapPressEvent, Region } from "react-native-maps";
+import MapView, { MapPressEvent, Marker, Region } from "react-native-maps";
 import { supabase } from "../../lib/api/supabase";
 import { FormField } from "../../lib/components/ui/FormField";
 import { TagInput } from "../../lib/components/ui/TagInput";
@@ -26,6 +26,32 @@ import {
 } from "../../lib/hooks/useServiceForm";
 import { CreateServiceProps } from "../../lib/types/custom.types";
 import { uploadImage } from "../../lib/utils/imageUtils";
+
+// Hides all Google POI markers, transit icons, and business labels
+const CLEAN_MAP_STYLE = [
+  {
+    featureType: "poi",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.attraction", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.government", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.medical", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "poi.park",
+    elementType: "labels",
+    stylers: [{ visibility: "off" }],
+  },
+  { featureType: "poi.place_of_worship", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.school", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.sports_complex", stylers: [{ visibility: "off" }] },
+  {
+    featureType: "transit",
+    elementType: "labels.icon",
+    stylers: [{ visibility: "off" }],
+  },
+];
 
 // Digos City default center
 const DIGOS_REGION: Region = {
@@ -203,17 +229,23 @@ export default function CreateServiceScreen({
               >
                 {form.selectedImage ? (
                   <Image
-                    source={{ uri: form.selectedImage }}
+                    source={{ uri: form.selectedImage.uri }}
                     className="w-full h-full"
                     resizeMode="cover"
                   />
                 ) : (
                   <View className="flex-1 items-center justify-center">
-                    <AntDesign name="camera" size={48} color={COLORS.slate400} />
+                    <AntDesign
+                      name="camera"
+                      size={48}
+                      color={COLORS.slate400}
+                    />
                     <Text className="mt-2 text-slate-500">
                       Tap to upload image
                     </Text>
-                    <Text className="text-xs text-slate-400 mt-1">Optional</Text>
+                    <Text className="text-xs text-slate-400 mt-1">
+                      Optional
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -344,6 +376,9 @@ export default function CreateServiceScreen({
                         latitudeDelta: 0.008,
                         longitudeDelta: 0.008,
                       }}
+                      customMapStyle={CLEAN_MAP_STYLE}
+                      showsPointsOfInterests={false}
+                      showsBuildings={false}
                       scrollEnabled={false}
                       zoomEnabled={false}
                       pitchEnabled={false}
@@ -355,7 +390,10 @@ export default function CreateServiceScreen({
                     <View
                       style={{
                         position: "absolute",
-                        top: 0, left: 0, right: 0, bottom: 0,
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
                       }}
                     />
                     <TouchableOpacity
@@ -478,11 +516,12 @@ export default function CreateServiceScreen({
                   }
                 : DIGOS_REGION
             }
+            customMapStyle={CLEAN_MAP_STYLE}
+            showsPointsOfInterests={false}
+            showsBuildings={false}
             onPress={handleMapPress}
           >
-            {activePin && (
-              <Marker coordinate={activePin} pinColor="#1877F2" />
-            )}
+            {activePin && <Marker coordinate={activePin} pinColor="#1877F2" />}
           </MapView>
 
           <View
@@ -510,7 +549,9 @@ export default function CreateServiceScreen({
                 alignItems: "center",
               }}
             >
-              <Text style={{ fontSize: 14, fontWeight: "600", color: "#64748b" }}>
+              <Text
+                style={{ fontSize: 14, fontWeight: "600", color: "#64748b" }}
+              >
                 Cancel
               </Text>
             </TouchableOpacity>

@@ -37,7 +37,12 @@ const ServiceCard = ({
   image,
   reviewCount,
   distanceKm,
-}: ItemProps & { id: string; distanceKm?: number | null }) => (
+  noLocation,
+}: ItemProps & {
+  id: string;
+  distanceKm?: number | null;
+  noLocation?: boolean;
+}) => (
   <TouchableOpacity
     onPress={() => router.push(`/service/${id}`)}
     style={{ width: COLUMN_WIDTH }}
@@ -87,6 +92,28 @@ const ServiceCard = ({
             {distanceKm < 1
               ? `${Math.round(distanceKm * 1000)}m`
               : `${distanceKm.toFixed(1)}km`}
+          </Text>
+        </View>
+      )}
+      {/* No location badge — shown when nearest filter is on but service has no pin */}
+      {noLocation && (
+        <View
+          style={{
+            position: "absolute",
+            bottom: 8,
+            right: 8,
+            backgroundColor: "rgba(100,116,139,0.75)",
+            borderRadius: 10,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 2,
+          }}
+        >
+          <Ionicons name="location-outline" size={9} color="#fff" />
+          <Text style={{ color: "#fff", fontSize: 9, fontWeight: "600" }}>
+            No location
           </Text>
         </View>
       )}
@@ -205,7 +232,7 @@ export default function ServicesScreen({
   if (error && !refreshing) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-50 px-8">
-        <AntDesign name="exclamationcircle" size={48} color={COLORS.danger} />
+        <AntDesign name="exclamation-circle" size={48} color={COLORS.danger} />
         <Text className="mt-4 text-slate-800 font-semibold text-center">
           {error}
         </Text>
@@ -274,6 +301,10 @@ export default function ServicesScreen({
               reviewCount={item.review_count}
               distanceKm={
                 filters.sortBy === "nearest" ? item._distanceKm : null
+              }
+              noLocation={
+                filters.sortBy === "nearest" &&
+                (item.latitude == null || item.longitude == null)
               }
             />
           )}
