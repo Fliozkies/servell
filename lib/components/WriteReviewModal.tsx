@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createReview, updateReview } from "../api/reviews.api";
 import { ReviewWithDetails } from "../types/database.types";
 
@@ -39,6 +40,7 @@ export default function WriteReviewModal({
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -87,7 +89,10 @@ export default function WriteReviewModal({
 
   const handleSubmit = async () => {
     if (rating === 0) {
-      Alert.alert("Rating Required", "Please select a star rating before submitting.");
+      Alert.alert(
+        "Rating Required",
+        "Please select a star rating before submitting.",
+      );
       return;
     }
     try {
@@ -125,7 +130,10 @@ export default function WriteReviewModal({
     >
       {/* Fixed backdrop — never moves, only fades */}
       <Animated.View
-        style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.45)", opacity: backdropOpacity }]}
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: "rgba(0,0,0,0.45)", opacity: backdropOpacity },
+        ]}
         pointerEvents="none"
       />
       <TouchableOpacity
@@ -134,26 +142,33 @@ export default function WriteReviewModal({
         onPress={handleClose}
       />
 
-      {/* Sheet — slides independently */}
-      <Animated.View
-        style={[
-          styles.sheetContainer,
-          {
-            transform: [{
-              translateY: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [600, 0],
-              }),
-            }],
-          },
-        ]}
+      {/* KeyboardAvoidingView wraps the whole bottom area so the sheet lifts with keyboard */}
+      <KeyboardAvoidingView
+        behavior="padding"
+        style={styles.kavOuter}
+        keyboardVerticalOffset={0}
       >
-        <KeyboardAvoidingView
-          behavior="position"
-          style={styles.kavWrap}
-          keyboardVerticalOffset={0}
+        <Animated.View
+          style={[
+            styles.sheetContainer,
+            {
+              transform: [
+                {
+                  translateY: slideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [600, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
         >
-          <View style={styles.sheet}>
+          <View
+            style={[
+              styles.sheet,
+              { paddingBottom: Math.max(insets.bottom, 8) },
+            ]}
+          >
             <View style={styles.handle} />
 
             <View style={styles.header}>
@@ -161,7 +176,9 @@ export default function WriteReviewModal({
                 <Text style={styles.headerTitle}>
                   {existingReview ? "Edit Your Review" : "Write a Review"}
                 </Text>
-                <Text style={styles.headerSub}>Your feedback helps others decide</Text>
+                <Text style={styles.headerSub}>
+                  Your feedback helps others decide
+                </Text>
               </View>
               <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
                 <AntDesign name="close" size={17} color="#64748b" />
@@ -179,7 +196,10 @@ export default function WriteReviewModal({
                   {[1, 2, 3, 4, 5].map((star) => (
                     <TouchableOpacity
                       key={star}
-                      onPress={() => { setRating(star); setHovered(0); }}
+                      onPress={() => {
+                        setRating(star);
+                        setHovered(0);
+                      }}
                       onPressIn={() => setHovered(star)}
                       onPressOut={() => setHovered(0)}
                       activeOpacity={0.8}
@@ -196,7 +216,9 @@ export default function WriteReviewModal({
                 <View style={styles.ratingLabelWrap}>
                   {displayRating > 0 ? (
                     <View style={styles.ratingBadge}>
-                      <Text style={styles.ratingBadgeText}>{STAR_LABELS[displayRating]}</Text>
+                      <Text style={styles.ratingBadgeText}>
+                        {STAR_LABELS[displayRating]}
+                      </Text>
                     </View>
                   ) : (
                     <Text style={styles.ratingHint}>Tap a star to rate</Text>
@@ -230,56 +252,158 @@ export default function WriteReviewModal({
               <TouchableOpacity
                 onPress={handleSubmit}
                 disabled={!canSubmit}
-                style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
+                style={[
+                  styles.submitBtn,
+                  !canSubmit && styles.submitBtnDisabled,
+                ]}
               >
                 {submitting ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={[styles.submitText, !canSubmit && styles.submitTextDisabled]}>
+                  <Text
+                    style={[
+                      styles.submitText,
+                      !canSubmit && styles.submitTextDisabled,
+                    ]}
+                  >
                     {existingReview ? "Update Review" : "Submit Review"}
                   </Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </Animated.View>
+        </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  sheetContainer: {
+  kavOuter: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
+    maxHeight: "92%",
   },
-  kavWrap: { maxHeight: "92%" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  handle: { width: 36, height: 4, backgroundColor: "#e2e8f0", borderRadius: 2, alignSelf: "center", marginTop: 10, marginBottom: 4 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  sheetContainer: {
+    // no position:absolute here — KAV owns the positioning now
+  },
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    backgroundColor: "#e2e8f0",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
   headerSub: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
-  closeBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#f1f5f9", alignItems: "center", justifyContent: "center" },
+  closeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   scroll: { flexGrow: 0 },
-  ratingSection: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16, alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#f8fafc" },
-  sectionLabel: { fontSize: 14, fontWeight: "600", color: "#334155", marginBottom: 16, alignSelf: "flex-start" },
+  ratingSection: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 16,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f8fafc",
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#334155",
+    marginBottom: 16,
+    alignSelf: "flex-start",
+  },
   starsRow: { flexDirection: "row", gap: 4, marginBottom: 12 },
   starBtn: { padding: 4 },
-  ratingLabelWrap: { height: 28, alignItems: "center", justifyContent: "center" },
-  ratingBadge: { backgroundColor: "#fef9c3", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 4, borderWidth: 1, borderColor: "#fde68a" },
+  ratingLabelWrap: {
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ratingBadge: {
+    backgroundColor: "#fef9c3",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+  },
   ratingBadgeText: { fontSize: 13, fontWeight: "700", color: "#92400e" },
   ratingHint: { fontSize: 13, color: "#94a3b8" },
   commentSection: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 10 },
-  commentLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  commentLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
   optional: { fontSize: 11, color: "#94a3b8", fontStyle: "italic" },
-  commentInput: { backgroundColor: "#f8fafc", borderWidth: 1.5, borderColor: "#e2e8f0", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 8, fontSize: 14, color: "#0f172a", minHeight: 110, lineHeight: 20 },
-  charCount: { fontSize: 11, color: "#94a3b8", textAlign: "right", marginTop: 6 },
-  footer: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: 1, borderTopColor: "#f1f5f9", gap: 10 },
-  cancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: "#f1f5f9", alignItems: "center" },
+  commentInput: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: "#0f172a",
+    minHeight: 110,
+    lineHeight: 20,
+  },
+  charCount: {
+    fontSize: 11,
+    color: "#94a3b8",
+    textAlign: "right",
+    marginTop: 6,
+  },
+  footer: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    gap: 10,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+  },
   cancelText: { fontSize: 14, fontWeight: "600", color: "#64748b" },
-  submitBtn: { flex: 2, paddingVertical: 13, borderRadius: 14, backgroundColor: "#3b82f6", alignItems: "center" },
+  submitBtn: {
+    flex: 2,
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#3b82f6",
+    alignItems: "center",
+  },
   submitBtnDisabled: { backgroundColor: "#e2e8f0" },
   submitText: { fontSize: 14, fontWeight: "700", color: "#fff" },
   submitTextDisabled: { color: "#94a3b8" },

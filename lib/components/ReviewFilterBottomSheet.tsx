@@ -2,14 +2,15 @@
 import { AntDesign } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Animated,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ReviewFilterOptions } from "../types/database.types";
 
 type ReviewFilterBottomSheetProps = {
@@ -48,8 +49,11 @@ export default function ReviewFilterBottomSheet({
   onApply,
   currentFilters,
 }: ReviewFilterBottomSheetProps) {
+  const insets = useSafeAreaInsets();
   const [filters, setFilters] = useState<ReviewFilterOptions>(currentFilters);
-  const [expandedSection, setExpandedSection] = useState<AccordionKey | null>("rating");
+  const [expandedSection, setExpandedSection] = useState<AccordionKey | null>(
+    "rating",
+  );
   const [modalVisible, setModalVisible] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -64,13 +68,30 @@ export default function ReviewFilterBottomSheet({
       slideAnim.setValue(0);
       backdropOpacity.setValue(0);
       Animated.parallel([
-        Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.spring(slideAnim, { toValue: 1, bounciness: 4, speed: 14, useNativeDriver: true }),
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 1,
+          bounciness: 4,
+          speed: 14,
+          useNativeDriver: true,
+        }),
       ]).start();
     } else {
       Animated.parallel([
-        Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
       ]).start(() => setModalVisible(false));
     }
   }, [visible, slideAnim, backdropOpacity]);
@@ -202,14 +223,30 @@ export default function ReviewFilterBottomSheet({
       onRequestClose={onClose}
     >
       <Animated.View
-        style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.45)", opacity: backdropOpacity }]}
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: "rgba(0,0,0,0.45)", opacity: backdropOpacity },
+        ]}
         pointerEvents="none"
       />
-      <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
+      <TouchableOpacity
+        style={StyleSheet.absoluteFillObject}
+        activeOpacity={1}
+        onPress={onClose}
+      />
       <Animated.View
         style={[
           styles.sheetContainer,
-          { transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [600, 0] }) }] },
+          {
+            transform: [
+              {
+                translateY: slideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [600, 0],
+                }),
+              },
+            ],
+          },
         ]}
       >
         <View style={styles.sheet}>
@@ -234,7 +271,7 @@ export default function ReviewFilterBottomSheet({
           {/* Accordion Sections */}
           <ScrollView
             showsVerticalScrollIndicator={false}
-            style={{ flexGrow: 0 }}
+            style={{ flexShrink: 1 }}
             contentContainerStyle={{
               paddingHorizontal: 16,
               paddingBottom: 8,
@@ -351,7 +388,12 @@ export default function ReviewFilterBottomSheet({
           </ScrollView>
 
           {/* Footer */}
-          <View style={styles.footer}>
+          <View
+            style={[
+              styles.footer,
+              { paddingBottom: Math.max(insets.bottom, 14) },
+            ]}
+          >
             <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn}>
               <Text style={styles.clearBtnText}>Clear All</Text>
             </TouchableOpacity>
@@ -371,13 +413,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+    justifyContent: "flex-end",
   },
   sheet: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: "88%",
-    paddingBottom: 8,
+    maxHeight: "80%",
+    flexShrink: 1,
   },
   handleBar: {
     width: 36,
@@ -533,7 +576,7 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: "row",
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
     gap: 10,

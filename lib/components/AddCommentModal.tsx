@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createComment } from "../api/comments.api";
 import { createReviewReply, updateReviewReply } from "../api/reviews.api";
 import { CommentWithDetails, ReviewWithDetails } from "../types/database.types";
@@ -44,6 +45,7 @@ export default function AddCommentModal({
   const [submitting, setSubmitting] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const insets = useSafeAreaInsets();
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -102,7 +104,10 @@ export default function AddCommentModal({
       if (isReviewReply && replyToReview) {
         // Provider replying to a review
         if (replyToReview.review_reply) {
-          await updateReviewReply(replyToReview.review_reply.id, content.trim());
+          await updateReviewReply(
+            replyToReview.review_reply.id,
+            content.trim(),
+          );
         } else {
           await createReviewReply({
             review_id: replyToReview.id,
@@ -151,7 +156,9 @@ export default function AddCommentModal({
   if (isReviewReply && replyToReview) {
     headerIcon = "create";
     headerIconColor = "#10b981";
-    headerTitle = replyToReview.review_reply ? "Edit Your Reply" : "Reply to Review";
+    headerTitle = replyToReview.review_reply
+      ? "Edit Your Reply"
+      : "Reply to Review";
     const reviewerName = replyToReview.profile?.first_name
       ? `${replyToReview.profile.first_name} ${replyToReview.profile.last_name || ""}`.trim()
       : "Anonymous";
@@ -189,38 +196,59 @@ export default function AddCommentModal({
         onPress={handleClose}
       />
 
-      {/* Sheet — slides independently */}
-      <Animated.View
-        style={[
-          styles.sheetContainer,
-          {
-            transform: [{
-              translateY: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [600, 0],
-              }),
-            }],
-          },
-        ]}
+      {/* KeyboardAvoidingView wraps the whole bottom area so the sheet lifts with keyboard */}
+      <KeyboardAvoidingView
+        behavior="padding"
+        style={styles.kavOuter}
+        keyboardVerticalOffset={0}
       >
-        <KeyboardAvoidingView
-          behavior="padding"
-          style={styles.kavWrap}
-          keyboardVerticalOffset={0}
+        <Animated.View
+          style={[
+            styles.sheetContainer,
+            {
+              transform: [
+                {
+                  translateY: slideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [600, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
         >
-          <View style={styles.sheet}>
+          <View
+            style={[
+              styles.sheet,
+              { paddingBottom: Math.max(insets.bottom, 8) },
+            ]}
+          >
             <View style={styles.handle} />
 
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerLeft}>
-                <View style={[styles.headerIcon, { backgroundColor: `${headerIconColor}18` }]}>
-                  <Ionicons name={headerIcon} size={16} color={headerIconColor} />
+                <View
+                  style={[
+                    styles.headerIcon,
+                    { backgroundColor: `${headerIconColor}18` },
+                  ]}
+                >
+                  <Ionicons
+                    name={headerIcon}
+                    size={16}
+                    color={headerIconColor}
+                  />
                 </View>
                 <View>
                   <Text style={styles.headerTitle}>{headerTitle}</Text>
                   {headerSubtitle && (
-                    <Text style={[styles.replyingToLabel, { color: headerIconColor }]}>
+                    <Text
+                      style={[
+                        styles.replyingToLabel,
+                        { color: headerIconColor },
+                      ]}
+                    >
                       {headerSubtitle}
                     </Text>
                   )}
@@ -234,7 +262,12 @@ export default function AddCommentModal({
             {/* Quoted text */}
             {quotedText && (
               <View style={styles.quotedComment}>
-                <View style={[styles.quoteLine, { backgroundColor: headerIconColor }]} />
+                <View
+                  style={[
+                    styles.quoteLine,
+                    { backgroundColor: headerIconColor },
+                  ]}
+                />
                 <Text style={styles.quotedText} numberOfLines={2}>
                   {quotedText}
                 </Text>
@@ -287,9 +320,16 @@ export default function AddCommentModal({
                 {submitting ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={[styles.submitText, !canSubmit && styles.submitTextDisabled]}>
+                  <Text
+                    style={[
+                      styles.submitText,
+                      !canSubmit && styles.submitTextDisabled,
+                    ]}
+                  >
                     {isReviewReply
-                      ? replyToReview?.review_reply ? "Update Reply" : "Post Reply"
+                      ? replyToReview?.review_reply
+                        ? "Update Reply"
+                        : "Post Reply"
                       : isCommentReply
                         ? "Post Reply"
                         : "Post Comment"}
@@ -298,39 +338,118 @@ export default function AddCommentModal({
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </Animated.View>
+        </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  sheetContainer: {
+  kavOuter: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
+    maxHeight: "85%",
   },
-  kavWrap: { maxHeight: "85%" },
-  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  handle: { width: 36, height: 4, backgroundColor: "#e2e8f0", borderRadius: 2, alignSelf: "center", marginTop: 10, marginBottom: 4 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  sheetContainer: {
+    // KAV owns the bottom positioning now
+  },
+  sheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    backgroundColor: "#e2e8f0",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
-  headerIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  headerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerTitle: { fontSize: 15, fontWeight: "700", color: "#0f172a" },
   replyingToLabel: { fontSize: 11, fontWeight: "600", marginTop: 1 },
-  closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#f1f5f9", alignItems: "center", justifyContent: "center" },
-  quotedComment: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginTop: 10, padding: 10, backgroundColor: "#f8fafc", borderRadius: 10 },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quotedComment: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+  },
   quoteLine: { width: 3, borderRadius: 2, alignSelf: "stretch", minHeight: 20 },
   quotedText: { flex: 1, fontSize: 12, color: "#64748b", lineHeight: 17 },
   inputSection: { paddingHorizontal: 16, paddingVertical: 12 },
-  input: { backgroundColor: "#f8fafc", borderWidth: 1.5, borderColor: "#e2e8f0", borderRadius: 14, padding: 12, fontSize: 14, color: "#0f172a", minHeight: 100, lineHeight: 20 },
-  charCount: { fontSize: 11, color: "#94a3b8", textAlign: "right", marginTop: 6 },
+  input: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 14,
+    color: "#0f172a",
+    minHeight: 100,
+    lineHeight: 20,
+  },
+  charCount: {
+    fontSize: 11,
+    color: "#94a3b8",
+    textAlign: "right",
+    marginTop: 6,
+  },
   charCountWarn: { color: "#ef4444" },
-  footer: { flexDirection: "row", paddingHorizontal: 16, paddingBottom: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#f1f5f9", gap: 10 },
-  cancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: "#f1f5f9", alignItems: "center" },
+  footer: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    gap: 10,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+  },
   cancelText: { fontSize: 14, fontWeight: "600", color: "#64748b" },
-  submitBtn: { flex: 2, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
+  submitBtn: {
+    flex: 2,
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: "center",
+  },
   submitText: { fontSize: 14, fontWeight: "700", color: "#fff" },
   submitTextDisabled: { color: "#94a3b8" },
 });
