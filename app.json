@@ -4,7 +4,7 @@
     "slug": "authWithTabs",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "assets/images/servell-logo.png",
+    "icon": "assets/images/logoV2_2.png",
     "scheme": "servell",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -18,7 +18,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "assets/images/servell-logo.png",
+        "foregroundImage": "assets/images/logoV2_2.png",
         "backgroundImage": "assets/images/android-icon-background.png",
         "monochromeImage": "assets/images/android-icon-monochrome.png"
       },
