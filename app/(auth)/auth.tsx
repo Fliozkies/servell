@@ -335,7 +335,7 @@ export default function AuthScreen() {
                 activeOpacity={0.85}
               >
                 <Text className="text-white text-center font-semibold text-[15px]">
-                  Next →
+                  Next
                 </Text>
               </TouchableOpacity>
 
@@ -396,7 +396,7 @@ export default function AuthScreen() {
                   activeOpacity={0.85}
                 >
                   <Text className="text-center font-semibold text-[15px] text-slate-600">
-                    ← Back
+                    Back
                   </Text>
                 </TouchableOpacity>
 

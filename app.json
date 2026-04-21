@@ -25,7 +25,10 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.xfliozkies.servell",
       "softwareKeyboardLayoutMode": "resize",
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo"
@@ -65,7 +68,8 @@
         {
           "googleMapsApiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo"
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

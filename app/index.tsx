@@ -1,116 +1,126 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Linking, View } from "react-native";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, Linking, StyleSheet } from "react-native";
 import { supabase } from "../lib/api/supabase";
 import { AuthSuccessModal } from "../lib/components/AuthSuccessModal";
-import { COLORS } from "../lib/constants/theme";
 
 /**
- * Auth-gate: redirects to the correct route on cold start.
- * Business logic (session check) is kept minimal — all auth state
- * management lives in the Supabase client.
- *
- * Also handles deep links for email confirmation with proper token verification.
+ * Auth-gate with splash video.
+ * 1. Plays the 5s splash video on a white background.
+ * 2. While video plays, the session check runs in parallel.
+ * 3. After the video ends (or 5.5s max), fades out then navigates.
  */
 export default function Index() {
-  const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authSuccess, setAuthSuccess] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | undefined>();
+
+  const pendingRoute = useRef<"/(main)" | "/(auth)/auth" | null>(null);
+  const videoFinished = useRef(false);
+  const authResolved = useRef(false);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  const player = useVideoPlayer(
+    require("../assets/videos/logoV2_3.mp4"),
+    (p) => {
+      p.loop = false;
+      p.muted = true;
+      p.play();
+    },
+  );
+
+  const finishSplash = useCallback(() => {
+    if (!pendingRoute.current) return;
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      router.replace(pendingRoute.current!);
+    });
+  }, [fadeAnim]);
+
+  useEffect(() => {
+    const sub = player.addListener("playingChange", (isPlaying) => {
+      if (!isPlaying && !videoFinished.current) {
+        videoFinished.current = true;
+        if (authResolved.current) finishSplash();
+      }
+    });
+
+    // Safety fallback: 5.5s max
+    const timeout = setTimeout(() => {
+      if (!videoFinished.current) {
+        videoFinished.current = true;
+        if (authResolved.current) finishSplash();
+      }
+    }, 5500);
+
+    return () => {
+      sub.remove();
+      clearTimeout(timeout);
+    };
+  }, [player, finishSplash]);
 
   useEffect(() => {
     let authListener: any;
 
     const initAuth = async () => {
-      // Listen for auth state changes (including email confirmation)
       const { data: authData } = supabase.auth.onAuthStateChange(
         async (event, session) => {
-          console.log("Auth event:", event);
-
-          // Handle email confirmation via deep link
           if (event === "SIGNED_IN" && session) {
-            // Check if this is coming from email confirmation
             const isEmailConfirmation = session.user.email_confirmed_at;
-
             if (isEmailConfirmation) {
               setAuthSuccess(true);
               setAuthMessage(
                 "Your email has been confirmed! Welcome to Servell 🎉",
               );
               setShowAuthModal(true);
-
-              // Navigate to main after showing modal
-              setTimeout(() => {
-                router.replace("/(main)");
-              }, 300);
-            } else {
-              router.replace("/(main)");
             }
+            pendingRoute.current = "/(main)";
           } else if (event === "SIGNED_OUT") {
-            router.replace("/(auth)/auth");
-          } else if (event === "TOKEN_REFRESHED") {
-            // Silent token refresh, no action needed
-          } else if (event === "USER_UPDATED") {
-            // User data updated, check if we should show feedback
+            pendingRoute.current = "/(auth)/auth";
           }
         },
       );
 
       authListener = authData.subscription;
 
-      // Check initial session
       const { data, error } = await supabase.auth.getSession();
+      pendingRoute.current =
+        !error && data.session ? "/(main)" : "/(auth)/auth";
 
-      if (!error && data.session) {
-        router.replace("/(main)");
-      } else {
-        router.replace("/(auth)/auth");
-      }
-
-      setLoading(false);
+      authResolved.current = true;
+      if (videoFinished.current) finishSplash();
     };
 
-    // Update the handleDeepLink function in index.tsx
     const handleDeepLink = async ({ url }: { url: string }) => {
-      console.log("Deep link received:", url);
-
-      // Parse URL to check for errors or tokens
       if (url.includes("error=")) {
-        // Email confirmation failed
         setAuthSuccess(false);
         setAuthMessage(
           "Email confirmation failed. Please try again or contact support.",
         );
         setShowAuthModal(true);
       } else if (url.includes("token_hash=") && url.includes("type=")) {
-        // Extract token and type from URL
         const urlObj = new URL(url.replace("servell://", "https://temp.com"));
         const tokenHash = urlObj.searchParams.get("token_hash");
         const type = urlObj.searchParams.get("type");
-
         if (tokenHash && type) {
           try {
-            // Verify the token with Supabase
             const { error } = await supabase.auth.verifyOtp({
               token_hash: tokenHash,
               type: type as any,
             });
-
             if (error) throw error;
-
-            // Success! Show modal
             setAuthSuccess(true);
             setAuthMessage(
               "Your email has been confirmed! Welcome to Servell 🎉",
             );
             setShowAuthModal(true);
-
-            // Navigate after modal
-            setTimeout(() => {
-              router.replace("/(main)");
-            }, 300);
+            pendingRoute.current = "/(main)";
+            setTimeout(() => router.replace("/(main)"), 300);
           } catch (error: any) {
-            console.error("Token verification error:", error);
             setAuthSuccess(false);
             setAuthMessage(error.message || "Verification failed");
             setShowAuthModal(true);
@@ -119,15 +129,9 @@ export default function Index() {
       }
     };
 
-    // Listen for deep link events (app is already open)
     const subscription = Linking.addEventListener("url", handleDeepLink);
-
-    // Check if app was opened with a deep link (cold start)
     Linking.getInitialURL().then((url) => {
-      if (url) {
-        console.log("Initial URL:", url);
-        handleDeepLink({ url });
-      }
+      if (url) handleDeepLink({ url });
     });
 
     initAuth();
@@ -136,28 +140,34 @@ export default function Index() {
       authListener?.unsubscribe();
       subscription?.remove();
     };
-  }, []);
-
-  const handleModalClose = () => {
-    setShowAuthModal(false);
-  };
-
-  if (loading) {
-    return (
-      <View className="flex-1 justify-center items-center bg-white">
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
+  }, [finishSplash]);
 
   return (
-    <>
+    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+      <VideoView
+        player={player}
+        style={styles.video}
+        contentFit="cover"
+        nativeControls={false}
+      />
       <AuthSuccessModal
         visible={showAuthModal}
         success={authSuccess}
-        onClose={handleModalClose}
+        onClose={() => setShowAuthModal(false)}
         message={authMessage}
       />
-    </>
+    </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  video: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+  },
+});
