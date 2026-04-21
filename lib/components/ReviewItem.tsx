@@ -6,19 +6,17 @@ import {
   Alert,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import {
-  createReviewReply,
   deleteReview,
   deleteReviewReply,
   toggleReviewReaction,
-  updateReviewReply,
 } from "../api/reviews.api";
 import { ReviewWithDetails } from "../types/database.types";
 import { formatDistanceToNow } from "../utils/date";
+import AddCommentModal from "./AddCommentModal";
 import { ProfileAvatar } from "./ui/ProfileAvatar";
 
 type ReviewItemProps = {
@@ -56,12 +54,7 @@ export default function ReviewItem({
     review.unhelpful_count ?? 0,
   );
   const [reacting, setReacting] = useState(false);
-
-  const [showReplyInput, setShowReplyInput] = useState(false);
-  const [replyContent, setReplyContent] = useState(
-    review.review_reply?.content || "",
-  );
-  const [submittingReply, setSubmittingReply] = useState(false);
+  const [replyModalVisible, setReplyModalVisible] = useState(false);
 
   const authorName = review.profile?.first_name
     ? `${review.profile.first_name} ${review.profile.last_name || ""}`.trim()
@@ -148,32 +141,6 @@ export default function ReviewItem({
 
   const handleEditReview = () => {
     if (onEdit) onEdit(review);
-  };
-
-  const handleSubmitReply = async () => {
-    if (!replyContent.trim()) {
-      Alert.alert("Error", "Reply cannot be empty");
-      return;
-    }
-    try {
-      setSubmittingReply(true);
-      if (review.review_reply) {
-        await updateReviewReply(review.review_reply.id, replyContent);
-      } else {
-        await createReviewReply({
-          review_id: review.id,
-          service_id: review.service_id,
-          content: replyContent,
-        });
-      }
-      setShowReplyInput(false);
-      onUpdate();
-    } catch (error) {
-      Alert.alert("Error", "Failed to submit reply");
-      console.log("Error: " + error);
-    } finally {
-      setSubmittingReply(false);
-    }
   };
 
   const handleDeleteReply = () => {
@@ -334,49 +301,29 @@ export default function ReviewItem({
       )}
 
       {/* Reply trigger */}
-      {canReply && !review.review_reply && !showReplyInput && (
+      {canReply && (
         <TouchableOpacity
-          onPress={() => setShowReplyInput(true)}
+          onPress={() => setReplyModalVisible(true)}
           style={styles.replyTrigger}
         >
           <AntDesign name="message" size={13} color="#3b82f6" />
-          <Text style={styles.replyTriggerText}>Reply</Text>
+          <Text style={styles.replyTriggerText}>
+            {review.review_reply ? "Edit Reply" : "Reply"}
+          </Text>
         </TouchableOpacity>
       )}
 
-      {/* Reply input */}
-      {canReply && showReplyInput && (
-        <View style={styles.replyInputWrap}>
-          <TextInput
-            value={replyContent}
-            onChangeText={setReplyContent}
-            placeholder="Write your reply..."
-            multiline
-            maxLength={1000}
-            style={styles.replyInput}
-          />
-          <View style={styles.replyInputActions}>
-            <TouchableOpacity
-              onPress={() => {
-                setShowReplyInput(false);
-                setReplyContent(review.review_reply?.content || "");
-              }}
-              style={styles.replyCancelBtn}
-            >
-              <Text style={styles.replyCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSubmitReply}
-              disabled={submittingReply}
-              style={styles.replySubmitBtn}
-            >
-              <Text style={styles.replySubmitText}>
-                {submittingReply ? "Sending…" : "Submit"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      {/* Reply modal — reuses AddCommentModal with replyToReview prop */}
+      <AddCommentModal
+        visible={replyModalVisible}
+        onClose={() => setReplyModalVisible(false)}
+        serviceId={review.service_id}
+        replyToReview={review}
+        onSubmit={() => {
+          setReplyModalVisible(false);
+          onUpdate();
+        }}
+      />
     </View>
   );
 }
@@ -489,45 +436,6 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   replyTriggerText: { fontSize: 13, fontWeight: "600", color: "#3b82f6" },
-  replyInputWrap: {
-    marginTop: 10,
-    marginLeft: 12,
-    paddingLeft: 12,
-    borderLeftWidth: 2,
-    borderLeftColor: "#bfdbfe",
-  },
-  replyInput: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: "#0f172a",
-    minHeight: 72,
-    textAlignVertical: "top",
-    marginBottom: 8,
-  },
-  replyInputActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 8,
-  },
-  replyCancelBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: "#f1f5f9",
-  },
-  replyCancelText: { fontSize: 13, fontWeight: "600", color: "#64748b" },
-  replySubmitBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: "#3b82f6",
-  },
-  replySubmitText: { fontSize: 13, fontWeight: "600", color: "#fff" },
   containerHighlight: {
     backgroundColor: "#eff6ff",
     borderLeftWidth: 4,

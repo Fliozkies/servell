@@ -201,6 +201,143 @@ export async function fetchCategories() {
 }
 
 /**
+ * Fetch actively boosted (featured) services.
+ * A service is boosted when boosted_until is set and still in the future.
+ * premium tier comes before standard; within same tier ordered by boosted_until desc.
+ */
+export async function fetchBoostedServices(): Promise<ServiceWithDetails[]> {
+  try {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("services")
+      .select(
+        `
+        *,
+        category:categories(*),
+        profile:profiles(*)
+      `,
+      )
+      .eq("status", "active")
+      .not("boosted_until", "is", null)
+      .gt("boosted_until", now)
+      // premium (p) sorts before standard (s) alphabetically
+      .order("boost_tier", { ascending: true, nullsFirst: false })
+      .order("boosted_until", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching boosted services:", error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Failed to fetch boosted services:", error);
+    throw error;
+  }
+}
+
+/**
+ * Compute the Editor's Pick score for a service.
+ *
+ * Formula (weights sum to 1.0):
+ *   50% — Bayesian rating: trusts ratings with more reviews more than fewer
+ *   25% — Recency: newer services score higher (decays over 90 days)
+ *   15% — Profile completeness: has image + has location set
+ *   10% — Engagement: has at least one review reply (active provider)
+ *
+ * Returns a score between 0 and 1.
+ */
+function computeEditorsScore(service: ServiceWithDetails): number {
+  // ── Bayesian rating (50%) ──────────────────────────────────────────────────
+  // Uses a global prior of 3.0 stars with a confidence weight of 5 reviews.
+  // Formula: (C * m + R * n) / (C + n)
+  //   where C = confidence weight, m = prior mean, R = actual rating, n = review count
+  const PRIOR_MEAN = 3.0;
+  const CONFIDENCE = 5;
+  const bayesianRating =
+    (CONFIDENCE * PRIOR_MEAN + service.rating * service.review_count) /
+    (CONFIDENCE + service.review_count);
+  // Normalise to 0–1 (max possible rating = 5)
+  const ratingScore = bayesianRating / 5;
+
+  // ── Recency (25%) ─────────────────────────────────────────────────────────
+  // Score = 1.0 on day 0, decays to ~0 at 90 days using exponential decay
+  const ageMs = Date.now() - new Date(service.created_at).getTime();
+  const ageDays = ageMs / (1000 * 60 * 60 * 24);
+  const DECAY_DAYS = 90;
+  const recencyScore = Math.exp(-ageDays / DECAY_DAYS);
+
+  // ── Profile completeness (15%) ─────────────────────────────────────────────
+  // Award points for: image, location set
+  let completeness = 0;
+  if (service.image_url) completeness += 0.5;
+  if (service.location && service.location.trim() !== "") completeness += 0.5;
+
+  // ── Engagement (10%) ──────────────────────────────────────────────────────
+  // 1.0 if provider has at least one review (shows they're active)
+  // We use review_count as a proxy; review replies aren't in this join
+  const engagementScore = service.review_count > 0 ? 1.0 : 0.0;
+
+  // ── Weighted sum ──────────────────────────────────────────────────────────
+  return (
+    ratingScore * 0.5 +
+    recencyScore * 0.25 +
+    completeness * 0.15 +
+    engagementScore * 0.1
+  );
+}
+
+/**
+ * Fetch the single best Editor's Pick service.
+ * Used as the Featured card fallback when no services are actively boosted.
+ *
+ * Scoring: Bayesian rating (50%) + recency (25%) + completeness (15%) + engagement (10%)
+ * Only considers services with at least 1 review to prevent brand-new listings
+ * from occupying the Featured slot with zero social proof.
+ */
+export async function fetchEditorsPick(): Promise<ServiceWithDetails | null> {
+  try {
+    // Fetch candidates: active, has at least 1 review, top 50 by rating
+    // We limit to 50 to avoid scoring hundreds of services client-side
+    const { data, error } = await supabase
+      .from("services")
+      .select(
+        `
+        *,
+        category:categories(*),
+        profile:profiles(*)
+      `,
+      )
+      .eq("status", "active")
+      .gt("review_count", 0)
+      .order("rating", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error("Error fetching editor's pick candidates:", error);
+      throw error;
+    }
+
+    if (!data || data.length === 0) return null;
+
+    // Score each candidate and pick the highest
+    const scored = data.map((s) => ({
+      service: {
+        ...s,
+        _editorsScore: computeEditorsScore(s),
+      } as ServiceWithDetails,
+      score: computeEditorsScore(s),
+    }));
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0].service;
+  } catch (error) {
+    console.error("Failed to fetch editor's pick:", error);
+    return null;
+  }
+}
+
+/**
  * Advanced search and filter services
  * Supports search query, category, price range, rating, location, and sorting.
  * When sortBy is "nearest", results are sorted client-side by distance from userLocation.

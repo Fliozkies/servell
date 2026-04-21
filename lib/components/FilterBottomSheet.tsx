@@ -1,5 +1,5 @@
-import AntDesign from "@expo/vector-icons/AntDesign";
 import { Ionicons } from "@expo/vector-icons";
+import AntDesign from "@expo/vector-icons/AntDesign";
 import * as Location from "expo-location";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -42,6 +42,7 @@ export default function FilterBottomSheet({
     "category",
   );
   const [locationLoading, setLocationLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
 
@@ -55,38 +56,40 @@ export default function FilterBottomSheet({
 
   useEffect(() => {
     if (visible) {
-      // Reset backdrop to transparent
+      // Show modal first, then animate in
+      setModalVisible(true);
       backdropOpacity.setValue(0);
-
-      // First animate slide
-      Animated.spring(slideAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        bounciness: 4,
-      }).start(() => {
-        // After slide completes, wait 100ms then darken backdrop
-        setTimeout(() => {
-          Animated.timing(backdropOpacity, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }).start();
-        }, 100);
-      });
-    } else {
-      // When closing, animate both together
+      slideAnim.setValue(0);
       Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
         Animated.spring(slideAnim, {
-          toValue: 0,
+          toValue: 1,
           useNativeDriver: true,
           bounciness: 4,
-        }),
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
+          speed: 14,
         }),
       ]).start();
+    } else {
+      // Animate out first, then hide modal
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Only unmount after animation fully completes
+        setModalVisible(false);
+      });
     }
   }, [visible, slideAnim, backdropOpacity]);
 
@@ -249,27 +252,46 @@ export default function FilterBottomSheet({
 
   return (
     <Modal
-      visible={visible}
-      animationType="slide"
+      visible={modalVisible}
+      animationType="none"
       transparent={true}
       onRequestClose={onClose}
     >
+      {/* ── Backdrop — fixed fullscreen, only fades in/out, never moves ── */}
       <Animated.View
         style={[
-          styles.backdrop,
+          StyleSheet.absoluteFillObject,
           {
-            backgroundColor: backdropOpacity.interpolate({
-              inputRange: [0, 1],
-              outputRange: ["rgba(0,0,0,0.1)", "rgba(0,0,0,0.5)"],
-            }),
+            backgroundColor: "rgba(0,0,0,0.45)",
+            opacity: backdropOpacity,
+          },
+        ]}
+        pointerEvents="none"
+      />
+
+      {/* ── Dismiss tap target behind the sheet ── */}
+      <TouchableOpacity
+        style={StyleSheet.absoluteFillObject}
+        activeOpacity={1}
+        onPress={onClose}
+      />
+
+      {/* ── Sheet — slides up/down independently ── */}
+      <Animated.View
+        style={[
+          styles.sheetContainer,
+          {
+            transform: [
+              {
+                translateY: slideAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [600, 0],
+                }),
+              },
+            ],
           },
         ]}
       >
-        <TouchableOpacity
-          style={styles.backdropTouchable}
-          activeOpacity={1}
-          onPress={onClose}
-        />
         <View style={styles.sheet}>
           {/* Handle bar */}
           <View style={styles.handleBar} />
@@ -444,7 +466,13 @@ export default function FilterBottomSheet({
                         style={styles.sortRow}
                         disabled={isNearest && locationLoading}
                       >
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
                           {isNearest && (
                             <Ionicons
                               name="location-outline"
@@ -495,17 +523,12 @@ export default function FilterBottomSheet({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    // backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  backdropTouchable: {
+  sheetContainer: {
     position: "absolute",
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
+    justifyContent: "flex-end",
   },
   sheet: {
     backgroundColor: "#fff",

@@ -17,6 +17,8 @@ export default function RootLayout() {
           <Stack.Screen name="service/[id]" />
           {/* Chat is a full-screen push route */}
           <Stack.Screen name="chat/[conversationId]" />
+          {/* Full service list — Top Rated, Nearest, by Category */}
+          <Stack.Screen name="services-list/index" />
         </Stack>
       </KeyboardProvider>
     </SafeAreaProvider>

@@ -29,7 +29,8 @@
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo"
-        }
+        },
+        "googleMobileAdsAppId": "ca-app-pub-3940256099942544~3347511713"
       }
     },
     "web": {
@@ -61,7 +62,9 @@
       "expo-web-browser",
       [
         "react-native-maps",
-        { "googleMapsApiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo" }
+        {
+          "googleMapsApiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo"
+        }
       ]
     ],
     "experiments": {

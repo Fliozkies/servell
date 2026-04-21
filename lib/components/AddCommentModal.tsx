@@ -1,9 +1,14 @@
 // lib/components/AddCommentModal.tsx
+//
+// Reused for:
+//  - Adding/replying to comments (Comments tab)
+//  - Provider replying to a review (Reviews tab) via replyToReview prop
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Modal,
   StyleSheet,
   Text,
@@ -13,14 +18,18 @@ import {
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { createComment } from "../api/comments.api";
-import { CommentWithDetails } from "../types/database.types";
+import { createReviewReply, updateReviewReply } from "../api/reviews.api";
+import { CommentWithDetails, ReviewWithDetails } from "../types/database.types";
 
 type AddCommentModalProps = {
   visible: boolean;
   onClose: () => void;
   serviceId: string;
   onSubmit: (newComment?: CommentWithDetails) => void;
+  /** For comment replies */
   replyingTo?: CommentWithDetails | null;
+  /** For provider replying to a review — mutually exclusive with replyingTo */
+  replyToReview?: ReviewWithDetails | null;
 };
 
 export default function AddCommentModal({
@@ -29,41 +38,96 @@ export default function AddCommentModal({
   serviceId,
   onSubmit,
   replyingTo,
+  replyToReview,
 }: AddCommentModalProps) {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+  const isReviewReply = !!replyToReview;
+  const isCommentReply = !!replyingTo;
+  const charLimit = isReviewReply ? 1000 : 500;
+
   useEffect(() => {
-    if (!visible) {
-      setContent("");
+    if (visible) {
+      // Pre-fill with existing review reply content if editing
+      if (isReviewReply && replyToReview?.review_reply?.content) {
+        setContent(replyToReview.review_reply.content);
+      } else {
+        setContent("");
+      }
+      setModalVisible(true);
+      slideAnim.setValue(0);
+      backdropOpacity.setValue(0);
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 1,
+          bounciness: 4,
+          speed: 14,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setTimeout(() => inputRef.current?.focus(), 50);
+      });
     } else {
-      // Auto focus after sheet animates in
-      setTimeout(() => inputRef.current?.focus(), 200);
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start(() => setModalVisible(false));
     }
-  }, [visible]);
+  }, [visible, isReviewReply, replyToReview, slideAnim, backdropOpacity]);
 
   const handleSubmit = async () => {
     if (!content.trim()) return;
     try {
       setSubmitting(true);
 
-      // Enforce 2-level threading: if replying to a reply, use the root parent instead
-      const parentId = replyingTo?.parent_comment_id
-        ? replyingTo.parent_comment_id // This is a reply, use its parent (the root comment)
-        : replyingTo?.id; // This is a top-level comment, use its ID directly
+      if (isReviewReply && replyToReview) {
+        // Provider replying to a review
+        if (replyToReview.review_reply) {
+          await updateReviewReply(replyToReview.review_reply.id, content.trim());
+        } else {
+          await createReviewReply({
+            review_id: replyToReview.id,
+            service_id: serviceId,
+            content: content.trim(),
+          });
+        }
+        onSubmit();
+      } else {
+        // Regular comment or comment reply
+        const parentId = replyingTo?.parent_comment_id
+          ? replyingTo.parent_comment_id
+          : replyingTo?.id;
 
-      const newComment = await createComment({
-        service_id: serviceId,
-        content: content.trim(),
-        parent_comment_id: parentId,
-      });
+        const newComment = await createComment({
+          service_id: serviceId,
+          content: content.trim(),
+          parent_comment_id: parentId,
+        });
+        onSubmit(newComment);
+      }
 
-      // Pass the new comment back for optimistic UI update
-      onSubmit(newComment);
       handleClose();
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to submit comment");
+      Alert.alert("Error", error.message || "Failed to submit");
     } finally {
       setSubmitting(false);
     }
@@ -74,72 +138,105 @@ export default function AddCommentModal({
     onClose();
   };
 
-  const replyingToName = replyingTo?.profile?.first_name
-    ? `${replyingTo.profile.first_name} ${replyingTo.profile.last_name || ""}`.trim()
-    : "Anonymous";
-
-  const isReply = !!replyingTo;
-  const charLimit = 500;
   const canSubmit = content.trim().length > 0 && !submitting;
+
+  // ── Header labels ──────────────────────────────────────────────────────────
+  let headerIcon: "return-down-forward" | "chatbubble-ellipses" | "create" =
+    "chatbubble-ellipses";
+  let headerIconColor = "#3b82f6";
+  let headerTitle = "Add a Comment";
+  let headerSubtitle: string | null = null;
+  let quotedText: string | null = null;
+
+  if (isReviewReply && replyToReview) {
+    headerIcon = "create";
+    headerIconColor = "#10b981";
+    headerTitle = replyToReview.review_reply ? "Edit Your Reply" : "Reply to Review";
+    const reviewerName = replyToReview.profile?.first_name
+      ? `${replyToReview.profile.first_name} ${replyToReview.profile.last_name || ""}`.trim()
+      : "Anonymous";
+    headerSubtitle = `Replying to ${reviewerName}`;
+    quotedText = replyToReview.comment || null;
+  } else if (isCommentReply && replyingTo) {
+    headerIcon = "return-down-forward";
+    headerIconColor = "#8b5cf6";
+    headerTitle = "Reply";
+    const replyName = replyingTo.profile?.first_name
+      ? `${replyingTo.profile.first_name} ${replyingTo.profile.last_name || ""}`.trim()
+      : "Anonymous";
+    headerSubtitle = `Replying to ${replyName}`;
+    quotedText = replyingTo.content;
+  }
 
   return (
     <Modal
-      visible={visible}
-      animationType="slide"
+      visible={modalVisible}
+      animationType="none"
       transparent={true}
       onRequestClose={handleClose}
     >
-      <View style={styles.backdrop}>
-        <TouchableOpacity
-          style={styles.backdropTouch}
-          activeOpacity={1}
-          onPress={handleClose}
-        />
+      {/* Fixed backdrop — never moves, only fades */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: "rgba(0,0,0,0.45)", opacity: backdropOpacity },
+        ]}
+        pointerEvents="none"
+      />
+      <TouchableOpacity
+        style={StyleSheet.absoluteFillObject}
+        activeOpacity={1}
+        onPress={handleClose}
+      />
+
+      {/* Sheet — slides independently */}
+      <Animated.View
+        style={[
+          styles.sheetContainer,
+          {
+            transform: [{
+              translateY: slideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [600, 0],
+              }),
+            }],
+          },
+        ]}
+      >
         <KeyboardAvoidingView
           behavior="padding"
           style={styles.kavWrap}
           keyboardVerticalOffset={0}
         >
           <View style={styles.sheet}>
-            {/* Handle */}
             <View style={styles.handle} />
 
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerLeft}>
-                <View
-                  style={[styles.headerIcon, isReply && styles.headerIconReply]}
-                >
-                  <Ionicons
-                    name={
-                      isReply ? "return-down-forward" : "chatbubble-ellipses"
-                    }
-                    size={16}
-                    color={isReply ? "#8b5cf6" : "#3b82f6"}
-                  />
+                <View style={[styles.headerIcon, { backgroundColor: `${headerIconColor}18` }]}>
+                  <Ionicons name={headerIcon} size={16} color={headerIconColor} />
                 </View>
                 <View>
-                  <Text style={styles.headerTitle}>
-                    {isReply ? "Reply to comment" : "Add a comment"}
-                  </Text>
-                  {isReply && (
-                    <Text style={styles.replyingToLabel}>
-                      @{replyingToName}
+                  <Text style={styles.headerTitle}>{headerTitle}</Text>
+                  {headerSubtitle && (
+                    <Text style={[styles.replyingToLabel, { color: headerIconColor }]}>
+                      {headerSubtitle}
                     </Text>
                   )}
                 </View>
               </View>
               <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-                <AntDesign name="close" size={17} color="#64748b" />
+                <AntDesign name="close" size={16} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            {/* Quoted original comment (when replying) */}
-            {isReply && replyingTo?.content && (
+            {/* Quoted text */}
+            {quotedText && (
               <View style={styles.quotedComment}>
-                <View style={styles.quoteLine} />
+                <View style={[styles.quoteLine, { backgroundColor: headerIconColor }]} />
                 <Text style={styles.quotedText} numberOfLines={2}>
-                  {replyingTo.content}
+                  {quotedText}
                 </Text>
               </View>
             )}
@@ -149,15 +246,18 @@ export default function AddCommentModal({
               <TextInput
                 ref={inputRef}
                 value={content}
-                onChangeText={setContent}
+                onChangeText={(t) => {
+                  if (t.length <= charLimit) setContent(t);
+                }}
                 placeholder={
-                  isReply
-                    ? `Reply to @${replyingToName}…`
-                    : "Share your thoughts…"
+                  isReviewReply
+                    ? "Write your reply to this review…"
+                    : isCommentReply
+                      ? "Write your reply…"
+                      : "Write a comment…"
                 }
                 placeholderTextColor="#94a3b8"
                 multiline
-                maxLength={charLimit}
                 style={styles.input}
                 textAlignVertical="top"
               />
@@ -181,192 +281,56 @@ export default function AddCommentModal({
                 disabled={!canSubmit}
                 style={[
                   styles.submitBtn,
-                  !canSubmit && styles.submitBtnDisabled,
-                  isReply && styles.submitBtnReply,
-                  isReply && !canSubmit && styles.submitBtnDisabled,
+                  { backgroundColor: canSubmit ? headerIconColor : "#e2e8f0" },
                 ]}
               >
                 {submitting ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text
-                    style={[
-                      styles.submitText,
-                      !canSubmit && styles.submitTextDisabled,
-                    ]}
-                  >
-                    {isReply ? "Post Reply" : "Post Comment"}
+                  <Text style={[styles.submitText, !canSubmit && styles.submitTextDisabled]}>
+                    {isReviewReply
+                      ? replyToReview?.review_reply ? "Update Reply" : "Post Reply"
+                      : isCommentReply
+                        ? "Post Reply"
+                        : "Post Comment"}
                   </Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  backdropTouch: {
+  sheetContainer: {
     position: "absolute",
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
   },
   kavWrap: { maxHeight: "85%" },
-  sheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    backgroundColor: "#e2e8f0",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginTop: 10,
-    marginBottom: 4,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  headerIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#eff6ff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerIconReply: {
-    backgroundColor: "#f5f3ff",
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  replyingToLabel: {
-    fontSize: 12,
-    color: "#8b5cf6",
-    fontWeight: "600",
-    marginTop: 1,
-  },
-  closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#f1f5f9",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quotedComment: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 4,
-    backgroundColor: "#f8fafc",
-    borderRadius: 10,
-    overflow: "hidden",
-    padding: 10,
-  },
-  quoteLine: {
-    width: 3,
-    borderRadius: 2,
-    backgroundColor: "#8b5cf6",
-    marginRight: 10,
-  },
-  quotedText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#64748b",
-    lineHeight: 18,
-    fontStyle: "italic",
-  },
-  inputSection: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  input: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1.5,
-    borderColor: "#e2e8f0",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: "#0f172a",
-    minHeight: 100,
-    lineHeight: 20,
-  },
-  charCount: {
-    fontSize: 11,
-    color: "#94a3b8",
-    textAlign: "right",
-    marginTop: 6,
-  },
-  charCountWarn: {
-    color: "#f97316",
-  },
-  footer: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-    gap: 10,
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: "#f1f5f9",
-    alignItems: "center",
-  },
-  cancelText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#64748b",
-  },
-  submitBtn: {
-    flex: 2,
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: "#3b82f6",
-    alignItems: "center",
-  },
-  submitBtnReply: {
-    backgroundColor: "#7c3aed",
-  },
-  submitBtnDisabled: {
-    backgroundColor: "#e2e8f0",
-  },
-  submitText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  submitTextDisabled: {
-    color: "#94a3b8",
-  },
+  sheet: { backgroundColor: "#fff", borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  handle: { width: 36, height: 4, backgroundColor: "#e2e8f0", borderRadius: 2, alignSelf: "center", marginTop: 10, marginBottom: 4 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  headerIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  headerTitle: { fontSize: 15, fontWeight: "700", color: "#0f172a" },
+  replyingToLabel: { fontSize: 11, fontWeight: "600", marginTop: 1 },
+  closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#f1f5f9", alignItems: "center", justifyContent: "center" },
+  quotedComment: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginTop: 10, padding: 10, backgroundColor: "#f8fafc", borderRadius: 10 },
+  quoteLine: { width: 3, borderRadius: 2, alignSelf: "stretch", minHeight: 20 },
+  quotedText: { flex: 1, fontSize: 12, color: "#64748b", lineHeight: 17 },
+  inputSection: { paddingHorizontal: 16, paddingVertical: 12 },
+  input: { backgroundColor: "#f8fafc", borderWidth: 1.5, borderColor: "#e2e8f0", borderRadius: 14, padding: 12, fontSize: 14, color: "#0f172a", minHeight: 100, lineHeight: 20 },
+  charCount: { fontSize: 11, color: "#94a3b8", textAlign: "right", marginTop: 6 },
+  charCountWarn: { color: "#ef4444" },
+  footer: { flexDirection: "row", paddingHorizontal: 16, paddingBottom: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#f1f5f9", gap: 10 },
+  cancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: "#f1f5f9", alignItems: "center" },
+  cancelText: { fontSize: 14, fontWeight: "600", color: "#64748b" },
+  submitBtn: { flex: 2, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
+  submitText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  submitTextDisabled: { color: "#94a3b8" },
 });

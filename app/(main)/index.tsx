@@ -1,11 +1,15 @@
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { supabase } from "../../lib/api/supabase";
 import BottomNav from "../../lib/components/BottomNav";
-import ServicesHeader from "../../lib/components/ServicesHeader";
+import ServicesHeader, {
+  CategoryPill,
+} from "../../lib/components/ServicesHeader";
 import { useUnreadCounts } from "../../lib/hooks/useUnreadCounts";
 import { PageName } from "../../lib/types/custom.types";
-import { FilterOptions } from "../../lib/types/filter.types";
+import { FilterOptions, UserLocation } from "../../lib/types/filter.types";
 import ConversationsScreen from "../screens/ConversationsScreen";
 import CreateServiceScreen from "../screens/CreateServiceScreen";
 import MapScreen from "../screens/MapScreen";
@@ -26,28 +30,67 @@ const DEFAULT_FILTERS: FilterOptions = {
  * Main app shell — responsible ONLY for:
  *  - Tab navigation state
  *  - Services header / filter visibility (Services tab only)
+ *  - Category pill state (loaded from ServicesScreen, rendered in header)
+ *  - Profile location fallback for "Nearest to you" when GPS not granted
  *  - Forwarding badge counts to BottomNav
- *
- * All business logic is delegated to hooks and child screens.
  */
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<PageName>("Services");
-  // const insets = useSafeAreaInsets();
 
   // Search / filter state (Services tab)
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
 
-  // Refresh keys to trigger re-rendering when clicking active tab
+  // Category pills — populated when ServicesScreen loads categories
+  const [categories, setCategories] = useState<CategoryPill[]>([]);
+
+  // Profile location fallback — loaded once on mount from the user's profile.
+  // Used as userLocation when GPS is not granted and "nearest" sort is active.
+  const [profileLocation, setProfileLocation] = useState<UserLocation>(null);
+
+  // Refresh keys
   const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
   const [messagesRefreshKey, setMessagesRefreshKey] = useState(0);
   const [notificationsRefreshKey, setNotificationsRefreshKey] = useState(0);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
-  // Badge counts via extracted hook
   const { counts, resetNotifications, refreshMessages } = useUnreadCounts();
+
+  // ── Load profile location once on mount ─────────────────────────────────
+  useEffect(() => {
+    async function loadProfileLocation() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("location_lat, location_lng")
+        .eq("id", user.id)
+        .single();
+
+      if (profile?.location_lat != null && profile?.location_lng != null) {
+        setProfileLocation({
+          latitude: profile.location_lat,
+          longitude: profile.location_lng,
+        });
+      }
+    }
+    loadProfileLocation();
+  }, []);
+
+  // ── Effective userLocation ───────────────────────────────────────────────
+  // If the filter already has a live GPS location, use it.
+  // Otherwise fall back to the profile's registered location.
+  const effectiveUserLocation: UserLocation =
+    filters.userLocation ?? profileLocation;
+
+  // Merge effectiveUserLocation into filters before passing to ServicesScreen
+  const effectiveFilters: FilterOptions = {
+    ...filters,
+    userLocation: effectiveUserLocation,
+  };
 
   const hasActiveFilters =
     filters.categoryId !== null ||
@@ -58,15 +101,12 @@ export default function MainScreen() {
     filters.sortBy !== "newest" ||
     filters.userLocation !== null;
 
-  // When the user navigates to Messages, refresh unread count
   useEffect(() => {
     if (activeTab === "Message") refreshMessages();
   }, [activeTab, refreshMessages]);
 
-  // Handle tab press with refresh on active tab
   const handleTabPress = (tab: PageName) => {
     if (tab === activeTab) {
-      // Refresh current tab
       switch (tab) {
         case "Services":
           setServicesRefreshKey((prev) => prev + 1);
@@ -90,6 +130,20 @@ export default function MainScreen() {
     }
   };
 
+  const handleCategoryPress = (id: string | null) => {
+    if (id === null) {
+      // "All" — just clear the category filter, stay on home
+      setFilters((prev) => ({ ...prev, categoryId: id }));
+      return;
+    }
+    // Any specific category — push to list screen
+    const categoryName = categories.find((c) => c.id === id)?.name ?? "Services";
+    router.push({
+      pathname: "/services-list",
+      params: { title: categoryName, categoryId: id },
+    });
+  };
+
   return (
     <SafeAreaView className="bg-white flex-1">
       {activeTab === "Services" && (
@@ -100,41 +154,36 @@ export default function MainScreen() {
           onNotificationPress={() => setActiveTab("Notification")}
           hasActiveFilters={!!hasActiveFilters}
           unreadNotifications={counts.notifications}
+          categories={categories}
+          activeCategoryId={filters.categoryId}
+          onCategoryPress={handleCategoryPress}
         />
       )}
 
       <View className="flex-1">
-        {/* Always-mounted tabs preserve subscriptions and avoid re-fetching */}
         <View
-          style={{
-            flex: 1,
-            display: activeTab === "Services" ? "flex" : "none",
-          }}
+          style={{ flex: 1, display: activeTab === "Services" ? "flex" : "none" }}
         >
           <ServicesScreen
             key={servicesRefreshKey}
             searchQuery={searchQuery}
             filterModalVisible={filterModalVisible}
             onFilterModalClose={() => setFilterModalVisible(false)}
-            filters={filters}
+            filters={effectiveFilters}
             onFiltersChange={setFilters}
+            onCategoriesLoaded={setCategories}
+            effectiveUserLocation={effectiveUserLocation}
           />
         </View>
 
         <View
-          style={{
-            flex: 1,
-            display: activeTab === "Map" ? "flex" : "none",
-          }}
+          style={{ flex: 1, display: activeTab === "Map" ? "flex" : "none" }}
         >
           <MapScreen key={mapRefreshKey} />
         </View>
 
         <View
-          style={{
-            flex: 1,
-            display: activeTab === "Message" ? "flex" : "none",
-          }}
+          style={{ flex: 1, display: activeTab === "Message" ? "flex" : "none" }}
         >
           <ConversationsScreen key={messagesRefreshKey} />
         </View>
@@ -152,15 +201,11 @@ export default function MainScreen() {
         </View>
 
         <View
-          style={{
-            flex: 1,
-            display: activeTab === "Profile" ? "flex" : "none",
-          }}
+          style={{ flex: 1, display: activeTab === "Profile" ? "flex" : "none" }}
         >
           <ProfileScreen key={profileRefreshKey} />
         </View>
 
-        {/* Post tab is mount/unmount — it's a form, no state to preserve */}
         {activeTab === "Post" && (
           <CreateServiceScreen
             onServiceCreated={() => setActiveTab("Services")}

@@ -6,6 +6,12 @@ export type Profile = {
   last_name: string | null;
   profile_image_url: string | null;
   physis_verified: boolean;
+  /** Display string from Google Places (e.g. "Digos City, Davao del Sur") */
+  location_text: string | null;
+  /** Geocoded latitude from registration location picker */
+  location_lat: number | null;
+  /** Geocoded longitude from registration location picker */
+  location_lng: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -34,6 +40,10 @@ export type Service = {
   rating: number;
   review_count: number;
   status: "active" | "inactive" | "deleted";
+  /** Non-null and in the future = this service is actively boosted/featured */
+  boosted_until: string | null;
+  /** Boost tier — reserved for future pricing tiers */
+  boost_tier: "standard" | "premium" | null;
   created_at: string;
   updated_at: string;
 };
@@ -43,6 +53,7 @@ export type ServiceWithDetails = Service & {
   category?: Category;
   profile?: Profile;
   _distanceKm?: number | null; // computed client-side when sorting by nearest
+  _editorsScore?: number | null; // computed client-side for Editor's Pick ranking
 };
 
 export type Review = {
@@ -98,7 +109,6 @@ export type Message = {
   created_at: string;
 };
 
-// Conversation with additional details
 export type ConversationWithDetails = Conversation & {
   service?: Service;
   buyer_profile?: Profile;
@@ -107,18 +117,15 @@ export type ConversationWithDetails = Conversation & {
   unread_count?: number;
 };
 
-// Message with sender details
 export type MessageWithSender = Message & {
   sender_profile?: Profile;
 };
 
-// Input type for creating a conversation
 export type CreateConversationInput = {
   service_id: string;
   seller_id: string;
 };
 
-// Input type for sending a message
 export type SendMessageInput = {
   conversation_id: string;
   content: string;
@@ -128,14 +135,12 @@ export type SendMessageInput = {
 // REVIEWS & COMMENTS TYPES
 // ============================================
 
-// Review with additional details
 export type ReviewWithDetails = Review & {
   profile?: Profile;
   review_reply?: ReviewReply;
   user_reaction?: "helpful" | "unhelpful" | null;
 };
 
-// Review reaction
 export type ReviewReaction = {
   id: string;
   review_id: string;
@@ -144,7 +149,6 @@ export type ReviewReaction = {
   created_at: string;
 };
 
-// Review reply from provider
 export type ReviewReply = {
   id: string;
   review_id: string;
@@ -155,12 +159,10 @@ export type ReviewReply = {
   updated_at: string;
 };
 
-// Review reply with provider details
 export type ReviewReplyWithDetails = ReviewReply & {
   provider_profile?: Profile;
 };
 
-// Service comment
 export type ServiceComment = {
   id: string;
   service_id: string;
@@ -173,7 +175,6 @@ export type ServiceComment = {
   updated_at: string;
 };
 
-// Comment with additional details
 export type CommentWithDetails = ServiceComment & {
   profile?: Profile;
   replies?: CommentWithDetails[];
@@ -181,7 +182,6 @@ export type CommentWithDetails = ServiceComment & {
   is_provider?: boolean;
 };
 
-// Comment like
 export type CommentLike = {
   id: string;
   comment_id: string;
@@ -189,42 +189,36 @@ export type CommentLike = {
   created_at: string;
 };
 
-// Input type for creating a review
 export type CreateReviewInput = {
   service_id: string;
   rating: number;
   comment?: string;
 };
 
-// Input type for updating a review
 export type UpdateReviewInput = {
   rating?: number;
   comment?: string;
 };
 
-// Input type for creating a review reply
 export type CreateReviewReplyInput = {
   review_id: string;
   service_id: string;
   content: string;
 };
 
-// Input type for creating a comment
 export type CreateCommentInput = {
   service_id: string;
   content: string;
   parent_comment_id?: string;
 };
 
-// Input type for updating a comment
 export type UpdateCommentInput = {
   content: string;
 };
 
-// Review filter options
 export type ReviewFilterOptions = {
-  rating?: number | null; // Filter by specific rating (1-5)
-  hasReply?: boolean | null; // true = with reply, false = no reply, null = all
+  rating?: number | null;
+  hasReply?: boolean | null;
   sortBy:
     | "newest"
     | "oldest"
@@ -234,7 +228,6 @@ export type ReviewFilterOptions = {
     | "lowest_rating";
 };
 
-// Comment sort options
 export type CommentSortOption = "newest" | "oldest" | "most_liked";
 
 // ============================================================
@@ -262,7 +255,7 @@ export type Notification = {
   type: NotificationType;
   title: string;
   body: string;
-  data: Record<string, string> | null; // e.g. { service_id, review_id, conversation_id }
+  data: Record<string, string> | null;
   is_read: boolean;
   created_at: string;
 };
@@ -283,7 +276,6 @@ export type ServiceSubscriptionWithProfile = ServiceSubscription & {
   subscriber_profile?: Profile;
 };
 
-// Input type for creating a notification (used by admin/system calls)
 export type CreateNotificationInput = {
   user_id: string;
   type: NotificationType;

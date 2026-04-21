@@ -1,7 +1,8 @@
 // lib/components/ReviewFilterBottomSheet.tsx
 import { AntDesign } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+    Animated,
     Modal,
     ScrollView,
     StyleSheet,
@@ -48,13 +49,31 @@ export default function ReviewFilterBottomSheet({
   currentFilters,
 }: ReviewFilterBottomSheetProps) {
   const [filters, setFilters] = useState<ReviewFilterOptions>(currentFilters);
-  const [expandedSection, setExpandedSection] = useState<AccordionKey | null>(
-    "rating",
-  );
+  const [expandedSection, setExpandedSection] = useState<AccordionKey | null>("rating");
+  const [modalVisible, setModalVisible] = useState(false);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     setFilters(currentFilters);
   }, [currentFilters]);
+
+  useEffect(() => {
+    if (visible) {
+      setModalVisible(true);
+      slideAnim.setValue(0);
+      backdropOpacity.setValue(0);
+      Animated.parallel([
+        Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 1, bounciness: 4, speed: 14, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
+      ]).start(() => setModalVisible(false));
+    }
+  }, [visible, slideAnim, backdropOpacity]);
 
   const handleApply = () => {
     onApply(filters);
@@ -177,17 +196,22 @@ export default function ReviewFilterBottomSheet({
 
   return (
     <Modal
-      visible={visible}
-      animationType="slide"
+      visible={modalVisible}
+      animationType="none"
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
-        <TouchableOpacity
-          style={styles.backdropTouchable}
-          activeOpacity={1}
-          onPress={onClose}
-        />
+      <Animated.View
+        style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.45)", opacity: backdropOpacity }]}
+        pointerEvents="none"
+      />
+      <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
+      <Animated.View
+        style={[
+          styles.sheetContainer,
+          { transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [600, 0] }) }] },
+        ]}
+      >
         <View style={styles.sheet}>
           {/* Handle bar */}
           <View style={styles.handleBar} />
@@ -336,23 +360,17 @@ export default function ReviewFilterBottomSheet({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  backdropTouchable: {
+  sheetContainer: {
     position: "absolute",
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
   },
   sheet: {
     backgroundColor: "#fff",

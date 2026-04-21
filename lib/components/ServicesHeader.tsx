@@ -1,16 +1,32 @@
+// lib/components/ServicesHeader.tsx
 import { AntDesign } from "@expo/vector-icons";
 import { Bell } from "lucide-react-native";
 import { useState } from "react";
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { COLORS } from "../constants/theme";
+
+export type CategoryPill = {
+  id: string | null; // null = "All"
+  name: string;
+};
 
 type ServicesHeaderProps = {
   searchQuery: string;
   onSearchChange: (text: string) => void;
   onFilterPress: () => void;
   onNotificationPress: () => void;
-  activeFilterCount?: number;
   hasActiveFilters?: boolean;
   unreadNotifications?: number;
+  /** Live category pills — id=null means "All" */
+  categories?: CategoryPill[];
+  activeCategoryId?: string | null;
+  onCategoryPress?: (id: string | null) => void;
 };
 
 export default function ServicesHeader({
@@ -20,12 +36,11 @@ export default function ServicesHeader({
   onNotificationPress,
   hasActiveFilters = false,
   unreadNotifications = 0,
+  categories = [],
+  activeCategoryId = null,
+  onCategoryPress,
 }: ServicesHeaderProps) {
   const [isFocused, setIsFocused] = useState(false);
-
-  const handleClear = () => {
-    onSearchChange("");
-  };
 
   const badgeCount =
     unreadNotifications > 99
@@ -35,75 +50,104 @@ export default function ServicesHeader({
         : null;
   const isWideBadge = badgeCount !== null && badgeCount.length > 1;
 
-  return (
-    <View className="bg-white px-5 py-2">
-      <View className="flex-row items-center justify-between">
-        <Text className="font-bold text-slate-900 text-3xl">Servell</Text>
+  // Always prepend the "All" pill
+  const pills: CategoryPill[] = [{ id: null, name: "All" }, ...categories];
 
-        {/* Search + Filter row */}
+  return (
+    <View className="bg-white">
+      {/* ── Row 1: Title + Search + Bell ── */}
+      <View className="flex-row items-center px-4 pt-3 pb-2 gap-3">
+        <Text
+          className="text-[26px] font-bold text-slate-900"
+          style={{ letterSpacing: -0.5 }}
+        >
+          Servell
+        </Text>
+
+        {/* Search + filter pill */}
         <View
-          className={`flex-1 ml-4 flex-row items-center rounded-2xl px-3 ${
-            isFocused ? "bg-blue-50" : "bg-slate-100"
-          }`}
+          className="flex-1 flex-row items-center rounded-xl px-3 gap-2"
+          style={{
+            backgroundColor: isFocused ? "#eff6ff" : COLORS.slate100,
+            borderWidth: 1,
+            borderColor: isFocused ? "#bfdbfe" : "transparent",
+          }}
         >
           <AntDesign
             name="search"
-            size={16}
-            color={isFocused ? "#3b82f6" : "#94a3b8"}
+            size={13}
+            color={isFocused ? COLORS.primary : COLORS.slate400}
           />
           <TextInput
             value={searchQuery}
             onChangeText={onSearchChange}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="Search..."
-            placeholderTextColor="#94a3b8"
-            className="flex-1 ml-2 py-2.5 text-sm text-slate-900"
+            placeholder="Search services..."
+            placeholderTextColor={COLORS.slate400}
+            className="flex-1 py-2.5 text-[13px] text-slate-900"
             returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={handleClear} className="mr-1">
-              <AntDesign name="close-circle" size={14} color="#94a3b8" />
+            <TouchableOpacity onPress={() => onSearchChange("")}>
+              <AntDesign
+                name="close-circle"
+                size={13}
+                color={COLORS.slate400}
+              />
             </TouchableOpacity>
           )}
 
-          {/* Filter icon */}
-          <View className="pl-2 ml-1 border-l border-gray-200">
-            <TouchableOpacity
-              onPress={onFilterPress}
-              className="p-1.5"
-              activeOpacity={0.6}
+          {/* Divider */}
+          <View
+            style={{
+              width: 1,
+              height: 16,
+              backgroundColor: COLORS.slate200,
+              marginHorizontal: 2,
+            }}
+          />
+
+          {/* Filter button */}
+          <TouchableOpacity onPress={onFilterPress} activeOpacity={0.6}>
+            <View
+              className="w-[26px] h-[26px] rounded-lg items-center justify-center"
+              style={{
+                backgroundColor: hasActiveFilters
+                  ? COLORS.primary
+                  : "transparent",
+              }}
             >
               <AntDesign
                 name="filter"
-                size={18}
-                color={hasActiveFilters ? "#3b82f6" : "#94a3b8"}
+                size={15}
+                color={hasActiveFilters ? "#fff" : COLORS.slate400}
               />
-            </TouchableOpacity>
-          </View>
+            </View>
+          </TouchableOpacity>
         </View>
 
-        {/* Bell icon — notification button */}
+        {/* Bell icon */}
         <TouchableOpacity
           onPress={onNotificationPress}
           activeOpacity={0.7}
-          style={{ marginLeft: 10, position: "relative" }}
+          style={{ position: "relative" }}
         >
           <Bell
-            size={24}
-            color={unreadNotifications > 0 ? "#1877F2" : "#94a3b8"}
+            size={22}
+            color={unreadNotifications > 0 ? COLORS.primary : COLORS.slate400}
             strokeWidth={unreadNotifications > 0 ? 2.5 : 2}
           />
           {badgeCount && (
             <View
               style={{
                 position: "absolute",
-                top: -5,
-                right: -6,
-                backgroundColor: "#ef4444",
+                top: -4,
+                right: -5,
+                backgroundColor: COLORS.danger,
                 borderRadius: 8,
-                minWidth: isWideBadge ? 22 : 16,
-                height: 16,
+                minWidth: isWideBadge ? 20 : 15,
+                height: 15,
                 paddingHorizontal: isWideBadge ? 3 : 0,
                 alignItems: "center",
                 justifyContent: "center",
@@ -112,9 +156,9 @@ export default function ServicesHeader({
               <Text
                 style={{
                   color: "#fff",
-                  fontSize: 9,
+                  fontSize: 8,
                   fontWeight: "700",
-                  lineHeight: 12,
+                  lineHeight: 11,
                 }}
               >
                 {badgeCount}
@@ -123,6 +167,44 @@ export default function ServicesHeader({
           )}
         </TouchableOpacity>
       </View>
+
+      {/* ── Row 2: Category pills ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: 14,
+          paddingBottom: 10,
+          gap: 7,
+        }}
+      >
+        {pills.map((pill) => {
+          const isActive = pill.id === activeCategoryId;
+          return (
+            <TouchableOpacity
+              key={pill.id ?? "__all__"}
+              onPress={() => onCategoryPress?.(pill.id)}
+              activeOpacity={0.75}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 6,
+                borderRadius: 20,
+                backgroundColor: isActive ? COLORS.primary : COLORS.slate100,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: "600",
+                  color: isActive ? "#fff" : COLORS.slate500,
+                }}
+              >
+                {pill.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
