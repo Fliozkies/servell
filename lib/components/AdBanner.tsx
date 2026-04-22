@@ -64,6 +64,7 @@ export default function AdBanner({ marginVertical = 0 }: AdBannerProps) {
   // to avoid showing an empty gap
   return (
     <View
+      collapsable={false}
       style={{
         marginVertical,
         // Hide container until ad loads to prevent layout jump
@@ -95,19 +96,24 @@ export default function AdBanner({ marginVertical = 0 }: AdBannerProps) {
       )}
 
       {!failed && (
-        <BannerAd
-          unitId={AD_UNIT_ID}
-          size={BannerAdSize.BANNER}
-          requestOptions={{
-            requestNonPersonalizedAdsOnly: false,
-          }}
-          onAdLoaded={() => setLoaded(true)}
-          onAdFailedToLoad={(error) => {
-            // Silently fail — no empty space shown to user
-            console.warn("AdMob banner failed to load:", error.message);
-            setFailed(true);
-          }}
-        />
+        // collapsable={false} is required on New Architecture (Fabric / RN 0.71+).
+        // Without it, Fabric may collapse the host view and crash with:
+        // "IllegalStateException: addViewAt: failed to insert view"
+        <View collapsable={false}>
+          <BannerAd
+            unitId={AD_UNIT_ID}
+            size={BannerAdSize.BANNER}
+            requestOptions={{
+              requestNonPersonalizedAdsOnly: false,
+            }}
+            onAdLoaded={() => setLoaded(true)}
+            onAdFailedToLoad={(error) => {
+              // Silently fail — no empty space shown to user
+              console.warn("AdMob banner failed to load:", error.message);
+              setFailed(true);
+            }}
+          />
+        </View>
       )}
     </View>
   );

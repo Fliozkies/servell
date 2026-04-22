@@ -6,5 +6,6 @@
   },
   "files.associations": {
     "*.css": "tailwindcss"
-  }
+  },
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

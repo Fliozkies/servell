@@ -19,9 +19,9 @@ import {
   fetchEditorsPick,
   searchAndFilterServices,
 } from "../../lib/api/services.api";
+import AdBanner from "../../lib/components/AdBanner";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { CategoryPill } from "../../lib/components/ServicesHeader";
-import AdBanner from "../../lib/components/AdBanner";
 import { COLORS } from "../../lib/constants/theme";
 import { useDebounce } from "../../lib/hooks/useDebounce";
 import { Category, ServiceWithDetails } from "../../lib/types/database.types";
@@ -114,20 +114,35 @@ const FeaturedCard = ({
       </View>
 
       <Text
-        style={{ fontSize: 15, fontWeight: "700", color: "#fff", marginBottom: 2 }}
+        style={{
+          fontSize: 15,
+          fontWeight: "700",
+          color: "#fff",
+          marginBottom: 2,
+        }}
         numberOfLines={1}
       >
         {service.title}
       </Text>
       <Text
-        style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", marginBottom: 6 }}
+        style={{
+          fontSize: 11,
+          color: "rgba(255,255,255,0.75)",
+          marginBottom: 6,
+        }}
         numberOfLines={1}
       >
         by {formatAuthor(service)}
         {service.location ? ` · ${service.location}` : ""}
       </Text>
 
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
         <Text style={{ fontSize: 16, fontWeight: "800", color: "#fff" }}>
           {formatPrice(service.price)}
         </Text>
@@ -170,11 +185,7 @@ const MINI_CARD_STROKE: Record<string, string> = {
   Others: "#d97706",
 };
 
-const MiniCard = ({
-  service,
-}: {
-  service: ServiceWithDetails;
-}) => {
+const MiniCard = ({ service }: { service: ServiceWithDetails }) => {
   const catName = service.category?.name ?? "Others";
   const bg = MINI_CARD_BG[catName] ?? "#f1f5f9";
   const stroke = MINI_CARD_STROKE[catName] ?? "#64748b";
@@ -239,12 +250,22 @@ const MiniCard = ({
 
       <View style={{ padding: 8, paddingTop: 7 }}>
         <Text
-          style={{ fontSize: 10, color: COLORS.primary, fontWeight: "600", marginBottom: 2 }}
+          style={{
+            fontSize: 10,
+            color: COLORS.primary,
+            fontWeight: "600",
+            marginBottom: 2,
+          }}
         >
           {catName}
         </Text>
         <Text
-          style={{ fontSize: 12, fontWeight: "700", color: "#0f172a", marginBottom: 4 }}
+          style={{
+            fontSize: 12,
+            fontWeight: "700",
+            color: "#0f172a",
+            marginBottom: 4,
+          }}
           numberOfLines={1}
         >
           {service.title}
@@ -294,7 +315,14 @@ const PromoBanner = ({ onPress }: { onPress?: () => void }) => (
       <Ionicons name="flash" size={22} color={COLORS.primary} />
     </View>
     <View style={{ flex: 1 }}>
-      <Text style={{ fontSize: 13, fontWeight: "700", color: "#0f172a", marginBottom: 2 }}>
+      <Text
+        style={{
+          fontSize: 13,
+          fontWeight: "700",
+          color: "#0f172a",
+          marginBottom: 2,
+        }}
+      >
         Boost your service
       </Text>
       <Text style={{ fontSize: 11, color: COLORS.slate500 }}>
@@ -403,17 +431,33 @@ const GridCard = ({ service }: { service: ServiceWithDetails }) => {
       {/* Body */}
       <View style={{ padding: 10 }}>
         <Text
-          style={{ fontSize: 10, color: COLORS.primary, fontWeight: "600", marginBottom: 2 }}
+          style={{
+            fontSize: 10,
+            color: COLORS.primary,
+            fontWeight: "600",
+            marginBottom: 2,
+          }}
         >
           {catName}
         </Text>
         <Text
-          style={{ fontSize: 12, fontWeight: "700", color: "#0f172a", marginBottom: 6 }}
+          style={{
+            fontSize: 12,
+            fontWeight: "700",
+            color: "#0f172a",
+            marginBottom: 6,
+          }}
           numberOfLines={2}
         >
           {service.title}
         </Text>
-        <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+          }}
+        >
           <View>
             <Text style={{ fontSize: 14, fontWeight: "800", color: "#0f172a" }}>
               {formatPrice(service.price)}
@@ -455,7 +499,9 @@ const SectionHeader = ({
     </Text>
     {action && (
       <TouchableOpacity onPress={onAction} activeOpacity={0.7}>
-        <Text style={{ fontSize: 12, fontWeight: "500", color: COLORS.primary }}>
+        <Text
+          style={{ fontSize: 12, fontWeight: "500", color: COLORS.primary }}
+        >
           {action}
         </Text>
       </TouchableOpacity>
@@ -488,8 +534,11 @@ export default function ServicesScreen({
   effectiveUserLocation,
 }: ServicesScreenProps) {
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
-  const [boostedServices, setBoostedServices] = useState<ServiceWithDetails[]>([]);
-  const [editorsPickService, setEditorsPickService] = useState<ServiceWithDetails | null>(null);
+  const [boostedServices, setBoostedServices] = useState<ServiceWithDetails[]>(
+    [],
+  );
+  const [editorsPickService, setEditorsPickService] =
+    useState<ServiceWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -586,7 +635,9 @@ export default function ServicesScreen({
     !isFiltered && filters.userLocation
       ? [...services]
           .filter((s) => s.latitude != null && s.longitude != null)
-          .sort((a, b) => (a._distanceKm ?? Infinity) - (b._distanceKm ?? Infinity))
+          .sort(
+            (a, b) => (a._distanceKm ?? Infinity) - (b._distanceKm ?? Infinity),
+          )
           .slice(0, 5)
       : [];
 
@@ -676,9 +727,7 @@ export default function ServicesScreen({
               tintColor={COLORS.primary}
             />
           }
-          renderItem={({ item }) => (
-            <GridCard service={item} />
-          )}
+          renderItem={({ item }) => <GridCard service={item} />}
         />
         <FilterBottomSheet
           visible={filterModalVisible}
@@ -728,6 +777,8 @@ export default function ServicesScreen({
 
   return (
     <View style={{ flex: 1 }}>
+      {/* ── Ad Banner — must live outside ScrollView to avoid Fabric addViewAt crash ── */}
+      <AdBanner marginVertical={4} />
       <ScrollView
         style={{ flex: 1, backgroundColor: COLORS.slate100 }}
         contentContainerStyle={{ padding: 16, gap: 20 }}
@@ -741,14 +792,14 @@ export default function ServicesScreen({
           />
         }
       >
-        {/* ── Ad Banner ── */}
-        <AdBanner marginVertical={4} />
-
         {/* ── Featured ── */}
         {featuredService && (
           <View>
             <SectionHeader title="Featured" />
-            <FeaturedCard service={featuredService} isBoosted={featuredIsBoosted} />
+            <FeaturedCard
+              service={featuredService}
+              isBoosted={featuredIsBoosted}
+            />
           </View>
         )}
 
@@ -756,22 +807,22 @@ export default function ServicesScreen({
         {nearestServices.length > 0 && (
           <View>
             <SectionHeader
-                title="Nearest to you"
-                action="See all"
-                onAction={() =>
-                  router.push({
-                    pathname: "/services-list",
-                    params: {
-                      title: "Nearest to You",
-                      sort: "nearest",
-                      ...(effectiveUserLocation && {
-                        userLocationLat: String(effectiveUserLocation.latitude),
-                        userLocationLng: String(effectiveUserLocation.longitude),
-                      }),
-                    },
-                  })
-                }
-              />
+              title="Nearest to you"
+              action="See all"
+              onAction={() =>
+                router.push({
+                  pathname: "/services-list",
+                  params: {
+                    title: "Nearest to You",
+                    sort: "nearest",
+                    ...(effectiveUserLocation && {
+                      userLocationLat: String(effectiveUserLocation.latitude),
+                      userLocationLng: String(effectiveUserLocation.longitude),
+                    }),
+                  },
+                })
+              }
+            />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -791,15 +842,15 @@ export default function ServicesScreen({
         {topRatedServices.length > 0 && (
           <View>
             <SectionHeader
-                title="Top rated"
-                action="See all"
-                onAction={() =>
-                  router.push({
-                    pathname: "/services-list",
-                    params: { title: "Top Rated", sort: "rating_high" },
-                  })
-                }
-              />
+              title="Top rated"
+              action="See all"
+              onAction={() =>
+                router.push({
+                  pathname: "/services-list",
+                  params: { title: "Top Rated", sort: "rating_high" },
+                })
+              }
+            />
             <View
               style={{
                 flexDirection: "row",
