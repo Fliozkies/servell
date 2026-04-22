@@ -25,15 +25,11 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.xfliozkies.servell",
       "softwareKeyboardLayoutMode": "resize",
-      "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ],
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo"
-        },
-        "googleMobileAdsAppId": "ca-app-pub-3940256099942544~3347511713"
+        }
       }
     },
     "web": {
@@ -69,7 +65,14 @@
           "googleMapsApiKey": "AIzaSyD3N7kqEw9XqD9JVTEdf_6lYV5z3ZGzOLo"
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "android_app_id": "ca-app-pub-3940256099942544~3347511713",
+          "ios_app_id": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
