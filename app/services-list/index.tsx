@@ -12,7 +12,7 @@
 
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -42,7 +42,13 @@ function formatAuthor(service: ServiceWithDetails): string {
   return "Unknown";
 }
 
-const ServiceCard = ({ service, showDistance }: { service: ServiceWithDetails; showDistance: boolean }) => {
+const ServiceCard = ({
+  service,
+  showDistance,
+}: {
+  service: ServiceWithDetails;
+  showDistance: boolean;
+}) => {
   const catName = service.category?.name ?? "Others";
 
   return (
@@ -65,12 +71,20 @@ const ServiceCard = ({ service, showDistance }: { service: ServiceWithDetails; s
             source={{ uri: service.image_url }}
             style={{ height: 130, width: "100%" }}
           />
-          <View style={{
-            position: "absolute", bottom: 8, left: 8,
-            backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 6,
-            paddingVertical: 2, borderRadius: 20, flexDirection: "row",
-            alignItems: "center", gap: 3,
-          }}>
+          <View
+            style={{
+              position: "absolute",
+              bottom: 8,
+              left: 8,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              paddingHorizontal: 6,
+              paddingVertical: 2,
+              borderRadius: 20,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 3,
+            }}
+          >
             <AntDesign name="star" size={9} color="#FCC419" />
             <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>
               {service.rating.toFixed(1)}
@@ -78,12 +92,20 @@ const ServiceCard = ({ service, showDistance }: { service: ServiceWithDetails; s
             </Text>
           </View>
           {showDistance && service._distanceKm != null && (
-            <View style={{
-              position: "absolute", bottom: 8, right: 8,
-              backgroundColor: "rgba(24,119,242,0.85)", paddingHorizontal: 6,
-              paddingVertical: 2, borderRadius: 8, flexDirection: "row",
-              alignItems: "center", gap: 2,
-            }}>
+            <View
+              style={{
+                position: "absolute",
+                bottom: 8,
+                right: 8,
+                backgroundColor: "rgba(24,119,242,0.85)",
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 8,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 2,
+              }}
+            >
               <Ionicons name="location-outline" size={8} color="#fff" />
               <Text style={{ color: "#fff", fontSize: 8, fontWeight: "700" }}>
                 {service._distanceKm < 1
@@ -94,14 +116,29 @@ const ServiceCard = ({ service, showDistance }: { service: ServiceWithDetails; s
           )}
         </View>
       ) : (
-        <View style={{ height: 130, backgroundColor: COLORS.slate100, alignItems: "center", justifyContent: "center" }}>
+        <View
+          style={{
+            height: 130,
+            backgroundColor: COLORS.slate100,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <AntDesign name="picture" size={32} color={COLORS.slate300} />
-          <View style={{
-            position: "absolute", bottom: 8, left: 8,
-            backgroundColor: "rgba(0,0,0,0.45)", paddingHorizontal: 6,
-            paddingVertical: 2, borderRadius: 20, flexDirection: "row",
-            alignItems: "center", gap: 3,
-          }}>
+          <View
+            style={{
+              position: "absolute",
+              bottom: 8,
+              left: 8,
+              backgroundColor: "rgba(0,0,0,0.45)",
+              paddingHorizontal: 6,
+              paddingVertical: 2,
+              borderRadius: 20,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 3,
+            }}
+          >
             <AntDesign name="star" size={9} color="#FCC419" />
             <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>
               {service.rating.toFixed(1)}
@@ -112,16 +149,34 @@ const ServiceCard = ({ service, showDistance }: { service: ServiceWithDetails; s
       )}
 
       <View style={{ padding: 10 }}>
-        <Text style={{ fontSize: 10, color: COLORS.primary, fontWeight: "600", marginBottom: 2 }}>
+        <Text
+          style={{
+            fontSize: 10,
+            color: COLORS.primary,
+            fontWeight: "600",
+            marginBottom: 2,
+          }}
+        >
           {catName}
         </Text>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: "#0f172a", marginBottom: 6 }} numberOfLines={2}>
+        <Text
+          style={{
+            fontSize: 12,
+            fontWeight: "700",
+            color: "#0f172a",
+            marginBottom: 6,
+          }}
+          numberOfLines={2}
+        >
           {service.title}
         </Text>
         <Text style={{ fontSize: 14, fontWeight: "800", color: "#0f172a" }}>
           {formatPrice(service.price)}
         </Text>
-        <Text style={{ fontSize: 10, color: COLORS.slate400, marginTop: 1 }} numberOfLines={1}>
+        <Text
+          style={{ fontSize: 10, color: COLORS.slate400, marginTop: 1 }}
+          numberOfLines={1}
+        >
           by {formatAuthor(service)}
         </Text>
       </View>
@@ -144,13 +199,16 @@ export default function ServiceListScreen() {
   const sort: SortOption = (params.sort as SortOption) ?? "newest";
   const categoryId = params.categoryId ?? null;
 
-  const userLocation: UserLocation =
-    params.userLocationLat && params.userLocationLng
-      ? {
-          latitude: parseFloat(params.userLocationLat),
-          longitude: parseFloat(params.userLocationLng),
-        }
-      : null;
+  const userLocation: UserLocation = useMemo(
+    () =>
+      params.userLocationLat && params.userLocationLng
+        ? {
+            latitude: parseFloat(params.userLocationLat),
+            longitude: parseFloat(params.userLocationLng),
+          }
+        : null,
+    [params.userLocationLat, params.userLocationLng],
+  );
 
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,7 +230,7 @@ export default function ServiceListScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [categoryId, sort]);
+  }, [categoryId, sort, userLocation]);
 
   useEffect(() => {
     load();
@@ -188,28 +246,35 @@ export default function ServiceListScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
       {/* Header */}
-      <View style={{
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 0.5,
-        borderBottomColor: COLORS.slate200,
-        backgroundColor: "#fff",
-      }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderBottomWidth: 0.5,
+          borderBottomColor: COLORS.slate200,
+          backgroundColor: "#fff",
+        }}
+      >
         <TouchableOpacity
           onPress={() => router.back()}
           activeOpacity={0.7}
           style={{
-            width: 36, height: 36, borderRadius: 18,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
             backgroundColor: COLORS.slate100,
-            alignItems: "center", justifyContent: "center",
+            alignItems: "center",
+            justifyContent: "center",
             marginRight: 12,
           }}
         >
-          <AntDesign name="arrowleft" size={18} color="#0f172a" />
+          <AntDesign name="arrow-left" size={18} color="#0f172a" />
         </TouchableOpacity>
-        <Text style={{ fontSize: 18, fontWeight: "700", color: "#0f172a", flex: 1 }}>
+        <Text
+          style={{ fontSize: 18, fontWeight: "700", color: "#0f172a", flex: 1 }}
+        >
           {title}
         </Text>
         {services.length > 0 && !loading && (
@@ -221,26 +286,67 @@ export default function ServiceListScreen() {
 
       {/* Content */}
       {loading && !refreshing ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <View
+          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        >
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={{ marginTop: 12, color: COLORS.slate500, fontSize: 13 }}>
             Loading…
           </Text>
         </View>
       ) : error ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
-          <AntDesign name="exclamation-circle" size={48} color={COLORS.danger} />
-          <Text style={{ marginTop: 12, color: "#0f172a", fontWeight: "600", textAlign: "center" }}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingHorizontal: 32,
+          }}
+        >
+          <AntDesign
+            name="exclamation-circle"
+            size={48}
+            color={COLORS.danger}
+          />
+          <Text
+            style={{
+              marginTop: 12,
+              color: "#0f172a",
+              fontWeight: "600",
+              textAlign: "center",
+            }}
+          >
             {error}
           </Text>
         </View>
       ) : services.length === 0 ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingHorizontal: 32,
+          }}
+        >
           <AntDesign name="inbox" size={64} color={COLORS.slate300} />
-          <Text style={{ marginTop: 12, fontSize: 16, fontWeight: "600", color: "#0f172a" }}>
+          <Text
+            style={{
+              marginTop: 12,
+              fontSize: 16,
+              fontWeight: "600",
+              color: "#0f172a",
+            }}
+          >
             No services found
           </Text>
-          <Text style={{ marginTop: 6, fontSize: 13, color: COLORS.slate500, textAlign: "center" }}>
+          <Text
+            style={{
+              marginTop: 6,
+              fontSize: 13,
+              color: COLORS.slate500,
+              textAlign: "center",
+            }}
+          >
             Try a different category or check back later
           </Text>
         </View>

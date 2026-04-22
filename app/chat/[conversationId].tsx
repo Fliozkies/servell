@@ -6,7 +6,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -121,6 +121,13 @@ export default function ChatScreen() {
     }
   }, [conversationId]);
 
+  // Mark messages as read whenever screen is focused (covers back-navigation too)
+  useFocusEffect(
+    useCallback(() => {
+      markAsRead();
+    }, [markAsRead]),
+  );
+
   useEffect(() => {
     loadConversationDetails();
     loadMessages();
@@ -214,9 +221,11 @@ export default function ChatScreen() {
       mediaTypes: ["images"],
       quality: 0.8,
       allowsEditing: false,
+      base64: true,
     });
-    if (result.canceled || !result.assets?.[0]) return;
-    const uri = result.assets[0].uri;
+    if (result.canceled || !result.assets?.[0] || !result.assets[0].base64)
+      return;
+    const asset = result.assets[0];
 
     const localId = `local_img_${Date.now()}`;
     const optimistic: LocalMessage = {
@@ -224,7 +233,7 @@ export default function ChatScreen() {
       _localId: localId,
       conversation_id: conversationId,
       sender_id: currentUserId!,
-      content: `${IMAGE_MESSAGE_PREFIX}${uri}`,
+      content: `${IMAGE_MESSAGE_PREFIX}${asset.uri}`,
       is_read: false,
       created_at: new Date().toISOString(),
       _status: "sending",
@@ -235,7 +244,12 @@ export default function ChatScreen() {
     setUploadingImage(true);
 
     try {
-      const publicUrl = await uploadImage(uri, "chat-images");
+      const pickedImage = {
+        uri: asset.uri,
+        base64: asset.base64 as string,
+        mimeType: asset.mimeType ?? "image/jpeg",
+      };
+      const publicUrl = await uploadImage(pickedImage, "chat-images");
       const content = `${IMAGE_MESSAGE_PREFIX}${publicUrl}`;
       await sendMessage({ conversation_id: conversationId, content });
 

@@ -1,18 +1,18 @@
 import { Camera, X } from "lucide-react-native";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { COLORS } from "../constants/theme";
 import { Profile } from "../types/database.types";
-import { uploadImage } from "../utils/imageUtils";
+import { PickedImage, uploadImage } from "../utils/imageUtils";
 import { ProfileAvatar } from "./ui/ProfileAvatar";
 
 interface ProfileImageModalProps {
@@ -31,23 +31,22 @@ export const ProfileImageModal: React.FC<ProfileImageModalProps> = ({
   onImageUpdate,
 }) => {
   const [uploading, setUploading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<PickedImage | null>(null);
 
   const handleImagePick = async () => {
     try {
-      // Use the existing pickImage utility from imageUtils
       const { pickImage: pickImageUtil } = await import("../utils/imageUtils");
 
-      await pickImageUtil(setSelectedImage);
+      let picked: PickedImage | null = null;
+      await pickImageUtil((image) => {
+        picked = image;
+        setSelectedImage(image);
+      });
 
-      // If image was selected, upload it
-      if (selectedImage) {
+      if (picked) {
         setUploading(true);
         try {
-          const uploadedUrl = await uploadImage(
-            selectedImage,
-            "profile-images",
-          );
+          const uploadedUrl = await uploadImage(picked, "profile-images");
           await onImageUpdate(uploadedUrl);
           Alert.alert("Success", "Profile picture updated successfully!");
           setSelectedImage(null);
@@ -69,7 +68,7 @@ export const ProfileImageModal: React.FC<ProfileImageModalProps> = ({
   };
 
   // Use the uploaded image if available, otherwise use selectedImage for preview
-  const displayImageUrl = selectedImage || profile?.profile_image_url;
+  const displayImageUrl = selectedImage?.uri || profile?.profile_image_url;
 
   return (
     <Modal

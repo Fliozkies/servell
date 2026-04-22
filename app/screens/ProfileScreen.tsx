@@ -28,6 +28,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Modal,
   RefreshControl,
@@ -108,6 +109,8 @@ export default function ProfileScreen() {
 
   const subscriptionsLoadedRef = useRef(false);
   const reviewsLoadedRef = useRef(false);
+  const actionSheetSlide = useRef(new Animated.Value(0)).current;
+  const actionSheetBackdrop = useRef(new Animated.Value(0)).current;
 
   // ── Data loaders ───────────────────────────────────────────────────────────
 
@@ -225,6 +228,49 @@ export default function ProfileScreen() {
     [currentUserId],
   );
 
+  const openActionSheet = useCallback(
+    (service: Service) => {
+      setServiceToEdit(service);
+      setIsActionSheetVisible(true);
+      actionSheetSlide.setValue(0);
+      actionSheetBackdrop.setValue(0);
+      Animated.parallel([
+        Animated.timing(actionSheetBackdrop, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.spring(actionSheetSlide, {
+          toValue: 1,
+          useNativeDriver: true,
+          bounciness: 4,
+        }),
+      ]).start();
+    },
+    [actionSheetSlide, actionSheetBackdrop],
+  );
+
+  const closeActionSheet = useCallback(
+    (callback?: () => void) => {
+      Animated.parallel([
+        Animated.timing(actionSheetBackdrop, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(actionSheetSlide, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setIsActionSheetVisible(false);
+        callback?.();
+      });
+    },
+    [actionSheetSlide, actionSheetBackdrop],
+  );
+
   // ── Service actions ────────────────────────────────────────────────────────
 
   const handleToggleStatus = useCallback((service: Service) => {
@@ -262,29 +308,32 @@ export default function ProfileScreen() {
   const handleDeleteService = useCallback(async () => {
     const captured = serviceToEdit;
     if (!captured) return;
-    setIsActionSheetVisible(false);
-    setTimeout(() => {
-      Alert.alert(
-        "Delete Service",
-        `"${captured.title}" will be permanently removed.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: async () => {
-              const { error } = await supabase
-                .from("services")
-                .update({ status: "deleted" })
-                .eq("id", captured.id);
-              if (!error)
-                setServices((prev) => prev.filter((s) => s.id !== captured.id));
+    closeActionSheet(() => {
+      setTimeout(() => {
+        Alert.alert(
+          "Delete Service",
+          `"${captured.title}" will be permanently removed.`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Delete",
+              style: "destructive",
+              onPress: async () => {
+                const { error } = await supabase
+                  .from("services")
+                  .update({ status: "deleted" })
+                  .eq("id", captured.id);
+                if (!error)
+                  setServices((prev) =>
+                    prev.filter((s) => s.id !== captured.id),
+                  );
+              },
             },
-          },
-        ],
-      );
-    }, 300);
-  }, [serviceToEdit]);
+          ],
+        );
+      }, 300);
+    });
+  }, [serviceToEdit, closeActionSheet]);
 
   const handleUnsubscribe = useCallback((providerId: string, name: string) => {
     Alert.alert("Unsubscribe", `Stop following ${name}?`, [
@@ -406,10 +455,7 @@ export default function ProfileScreen() {
                   <ServiceCard
                     key={service.id}
                     service={service}
-                    onMorePress={() => {
-                      setServiceToEdit(service);
-                      setIsActionSheetVisible(true);
-                    }}
+                    onMorePress={() => openActionSheet(service)}
                     onToggleStatus={() => handleToggleStatus(service)}
                   />
                 ))
@@ -460,69 +506,98 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Action Sheet */}
-      <Modal visible={isActionSheetVisible} transparent animationType="slide">
-        <TouchableOpacity
-          className="flex-1 bg-black/40 justify-end"
-          activeOpacity={1}
-          onPress={() => setIsActionSheetVisible(false)}
+      <Modal visible={isActionSheetVisible} transparent animationType="none">
+        <Animated.View
+          style={{
+            flex: 1,
+            justifyContent: "flex-end",
+            opacity: actionSheetBackdrop,
+            backgroundColor: "rgba(0,0,0,0.4)",
+          }}
         >
           <TouchableOpacity
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+            }}
             activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
-            className="bg-white rounded-t-[32px] p-6 pb-10"
+            onPress={() => closeActionSheet()}
+          />
+          <Animated.View
+            style={{
+              transform: [
+                {
+                  translateY: actionSheetSlide.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [400, 0],
+                  }),
+                },
+              ],
+            }}
           >
-            <View className="w-12 h-1 bg-slate-200 rounded-full self-center mb-6" />
-            {serviceToEdit && (
-              <Text
-                className="text-center font-bold text-slate-900 text-base mb-4"
-                numberOfLines={1}
-              >
-                {serviceToEdit.title}
-              </Text>
-            )}
-            <MenuOption
-              icon={<Edit3 size={20} color={COLORS.primary} />}
-              label="Edit Service"
-              onPress={() => {
-                setIsActionSheetVisible(false);
-                setTimeout(() => setIsEditServiceVisible(true), 300);
-              }}
-            />
-            <MenuOption
-              icon={
-                serviceToEdit?.status === "active" ? (
-                  <AlertCircle size={20} color="#f97316" />
-                ) : (
-                  <BarChart3 size={20} color={COLORS.success} />
-                )
-              }
-              label={
-                serviceToEdit?.status === "active"
-                  ? "Deactivate (hide)"
-                  : "Activate (show)"
-              }
-              onPress={() => {
-                const c = serviceToEdit;
-                setIsActionSheetVisible(false);
-                setTimeout(() => {
-                  if (c) handleToggleStatus(c);
-                }, 300);
-              }}
-            />
-            <MenuOption
-              icon={<Trash2 size={20} color={COLORS.danger} />}
-              label="Delete Service"
-              destructive
-              onPress={handleDeleteService}
-            />
             <TouchableOpacity
-              onPress={() => setIsActionSheetVisible(false)}
-              className="mt-4 bg-slate-100 py-4 rounded-2xl items-center"
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              className="bg-white rounded-t-[32px] p-6 pb-10"
             >
-              <Text className="font-bold text-slate-700">Cancel</Text>
+              <View className="w-12 h-1 bg-slate-200 rounded-full self-center mb-6" />
+              {serviceToEdit && (
+                <Text
+                  className="text-center font-bold text-slate-900 text-base mb-4"
+                  numberOfLines={1}
+                >
+                  {serviceToEdit.title}
+                </Text>
+              )}
+              <MenuOption
+                icon={<Edit3 size={20} color={COLORS.primary} />}
+                label="Edit Service"
+                onPress={() => {
+                  closeActionSheet(() =>
+                    setTimeout(() => setIsEditServiceVisible(true), 300),
+                  );
+                }}
+              />
+              <MenuOption
+                icon={
+                  serviceToEdit?.status === "active" ? (
+                    <AlertCircle size={20} color="#f97316" />
+                  ) : (
+                    <BarChart3 size={20} color={COLORS.success} />
+                  )
+                }
+                label={
+                  serviceToEdit?.status === "active"
+                    ? "Deactivate (hide)"
+                    : "Activate (show)"
+                }
+                onPress={() => {
+                  const c = serviceToEdit;
+                  closeActionSheet(() =>
+                    setTimeout(() => {
+                      if (c) handleToggleStatus(c);
+                    }, 300),
+                  );
+                }}
+              />
+              <MenuOption
+                icon={<Trash2 size={20} color={COLORS.danger} />}
+                label="Delete Service"
+                destructive
+                onPress={handleDeleteService}
+              />
+              <TouchableOpacity
+                onPress={() => closeActionSheet()}
+                className="mt-4 bg-slate-100 py-4 rounded-2xl items-center"
+              >
+                <Text className="font-bold text-slate-700">Cancel</Text>
+              </TouchableOpacity>
             </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
       </Modal>
 
       {serviceToEdit && (
@@ -848,7 +923,8 @@ const EditServiceModal = ({
             {form.selectedImage || service.image_url ? (
               <Image
                 source={{
-                  uri: form.selectedImage ?? service.image_url ?? undefined,
+                  uri:
+                    form.selectedImage?.uri ?? service.image_url ?? undefined,
                 }}
                 className="w-full h-full"
                 resizeMode="cover"

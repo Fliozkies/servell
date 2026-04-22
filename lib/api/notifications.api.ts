@@ -234,7 +234,7 @@ export function subscribeToNotifications(
   onNew: (notification: Notification) => void,
 ) {
   const channel = supabase
-    .channel(`notifications:${userId}`)
+    .channel(`notifications:${userId}:${Date.now()}`)
     .on(
       "postgres_changes",
       {

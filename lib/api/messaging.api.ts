@@ -7,6 +7,7 @@ import {
   MessageWithSender,
   SendMessageInput,
 } from "../types/database.types";
+import { sendNotification } from "./notifications.api";
 import { supabase } from "./supabase";
 
 // Image messages are stored in the messages.content field with this prefix.
@@ -170,6 +171,37 @@ export async function sendMessage(input: SendMessageInput): Promise<Message> {
 
     if (error) throw error;
     if (!data) throw new Error("Failed to send message");
+
+    // Notify the recipient in-app
+    try {
+      const { data: conversation } = await supabase
+        .from("conversations")
+        .select("buyer_id, seller_id, service:services(title)")
+        .eq("id", input.conversation_id)
+        .single();
+
+      if (conversation) {
+        const recipientId =
+          conversation.buyer_id === user.id
+            ? conversation.seller_id
+            : conversation.buyer_id;
+        const serviceTitle =
+          (conversation.service as any)?.[0]?.title ??
+          (conversation.service as any)?.title ??
+          "a service";
+
+        await sendNotification({
+          user_id: recipientId,
+          type: "new_message",
+          title: "New Message",
+          body: `You have a new message about ${serviceTitle}`,
+          data: { conversation_id: input.conversation_id },
+        });
+      }
+    } catch (notifErr) {
+      // Non-fatal — message was sent, notification is best-effort
+      console.warn("Could not send message notification:", notifErr);
+    }
 
     return data;
   } catch (error) {

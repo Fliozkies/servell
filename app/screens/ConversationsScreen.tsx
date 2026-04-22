@@ -32,8 +32,14 @@ export default function ConversationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
+  // Prevents multiple overlapping silent re-fetches when several realtime
+  // events fire in quick succession (e.g. message INSERT + conversation UPDATE).
+  const fetchInFlightRef = useRef(false);
 
   const loadConversations = useCallback(async (silent = false) => {
+    // Drop overlapping silent fetches — the in-flight one will return fresh data.
+    if (silent && fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       if (!silent) setLoading(true);
       const data = await fetchConversations();
@@ -43,6 +49,7 @@ export default function ConversationsScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      fetchInFlightRef.current = false;
     }
   }, []);
 
@@ -53,25 +60,29 @@ export default function ConversationsScreen() {
     let unsubscribe: (() => void) | undefined;
 
     const init = async () => {
-      await loadConversations();
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
       setCurrentUserId(user.id);
+
+      // Subscribe BEFORE the initial load so no event is missed during the
+      // async fetch window.
       unsubscribe = subscribeToConversations(user.id, () => {
         loadConversations(true);
       });
+
+      // Initial load after subscription is live.
+      await loadConversations();
     };
 
     init();
     return () => unsubscribe?.();
   }, [loadConversations]);
 
-  // Refresh conversations when screen comes into focus (e.g., returning from chat)
+  // Refresh conversations when screen comes into focus (e.g., returning from chat).
   useFocusEffect(
     useCallback(() => {
-      // Only refresh if we've already loaded once (skip initial mount)
       if (hasLoadedRef.current) {
         loadConversations(true);
       }

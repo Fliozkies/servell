@@ -1,5 +1,5 @@
-import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/api/supabase";
@@ -61,7 +61,9 @@ export default function MainScreen() {
   // ── Load profile location once on mount ─────────────────────────────────
   useEffect(() => {
     async function loadProfileLocation() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
 
       const { data: profile } = await supabase
@@ -105,6 +107,14 @@ export default function MainScreen() {
     if (activeTab === "Message") refreshMessages();
   }, [activeTab, refreshMessages]);
 
+  // Also refresh message badge whenever the main screen regains focus
+  // (e.g., user returns from chat screen via back button)
+  useFocusEffect(
+    useCallback(() => {
+      refreshMessages();
+    }, [refreshMessages]),
+  );
+
   const handleTabPress = (tab: PageName) => {
     if (tab === activeTab) {
       switch (tab) {
@@ -137,7 +147,8 @@ export default function MainScreen() {
       return;
     }
     // Any specific category — push to list screen
-    const categoryName = categories.find((c) => c.id === id)?.name ?? "Services";
+    const categoryName =
+      categories.find((c) => c.id === id)?.name ?? "Services";
     router.push({
       pathname: "/services-list",
       params: { title: categoryName, categoryId: id },
@@ -162,7 +173,10 @@ export default function MainScreen() {
 
       <View className="flex-1">
         <View
-          style={{ flex: 1, display: activeTab === "Services" ? "flex" : "none" }}
+          style={{
+            flex: 1,
+            display: activeTab === "Services" ? "flex" : "none",
+          }}
         >
           <ServicesScreen
             key={servicesRefreshKey}
@@ -183,7 +197,10 @@ export default function MainScreen() {
         </View>
 
         <View
-          style={{ flex: 1, display: activeTab === "Message" ? "flex" : "none" }}
+          style={{
+            flex: 1,
+            display: activeTab === "Message" ? "flex" : "none",
+          }}
         >
           <ConversationsScreen key={messagesRefreshKey} />
         </View>
@@ -201,7 +218,10 @@ export default function MainScreen() {
         </View>
 
         <View
-          style={{ flex: 1, display: activeTab === "Profile" ? "flex" : "none" }}
+          style={{
+            flex: 1,
+            display: activeTab === "Profile" ? "flex" : "none",
+          }}
         >
           <ProfileScreen key={profileRefreshKey} />
         </View>

@@ -89,6 +89,9 @@ export default function AuthScreen() {
     setLoading(true);
 
     // 1. Sign up with Supabase Auth
+    // Pass location in metadata so the handle_new_user trigger can write
+    // it into the profile row immediately — avoids a separate upsert that
+    // would fail because the session isn't active until email is confirmed.
     const { data, error } = await supabase.auth.signUp({
       email: regEmail.trim(),
       password: regPassword,
@@ -96,6 +99,9 @@ export default function AuthScreen() {
         data: {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
+          location_text: location.text,
+          location_lat: location.lat,
+          location_lng: location.lng,
         },
       },
     });
@@ -106,22 +112,7 @@ export default function AuthScreen() {
       return;
     }
 
-    // 2. Save location to profile
-    // The handle_new_user trigger creates the profile row on sign-up,
-    // but we upsert to be safe in case the trigger runs async.
-    const { error: profileError } = await supabase.from("profiles").upsert({
-      id: data.user.id,
-      location_text: location.text,
-      location_lat: location.lat,
-      location_lng: location.lng,
-    });
-
     setLoading(false);
-
-    if (profileError) {
-      // Non-fatal — user is created, location just didn't save
-      console.error("Profile location save failed:", profileError);
-    }
 
     Alert.alert(
       "Registration Successful",

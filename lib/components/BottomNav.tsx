@@ -1,6 +1,5 @@
 // lib/components/BottomNav.tsx
 import {
-  Bell,
   Home,
   LucideProps,
   Map,

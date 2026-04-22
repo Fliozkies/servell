@@ -16,7 +16,7 @@ import {
   TrendingDown,
   UserPlus,
 } from "lucide-react-native";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -32,7 +32,9 @@ import {
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  subscribeToNotifications,
 } from "../../lib/api/notifications.api";
+import { supabase } from "../../lib/api/supabase";
 import { COLORS } from "../../lib/constants/theme";
 import { Notification, NotificationType } from "../../lib/types/database.types";
 import { formatRelativeTime, isToday } from "../../lib/utils/date";
@@ -114,6 +116,8 @@ export default function NotificationScreen({
   const todayNotifs = notifications.filter((n) => isToday(n.created_at));
   const earlierNotifs = notifications.filter((n) => !isToday(n.created_at));
 
+  const userIdRef = useRef<string | null>(null);
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -128,7 +132,31 @@ export default function NotificationScreen({
   }, []);
 
   useEffect(() => {
-    load();
+    let unsub: (() => void) | null = null;
+
+    async function init() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      userIdRef.current = user.id;
+
+      // Subscribe FIRST — before the async load — so no notification that
+      // arrives during the fetch window is missed from the list.
+      unsub = subscribeToNotifications(user.id, (newNotif) => {
+        setNotifications((prev) => {
+          // Avoid duplicates (e.g. if load() already fetched it)
+          if (prev.some((n) => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
+      });
+
+      // Load after subscription is live.
+      await load();
+    }
+
+    init();
+    return () => unsub?.();
   }, [load]);
 
   const handleMarkRead = async (id: string) => {
@@ -244,7 +272,6 @@ export default function NotificationScreen({
 
         case "new_comment":
           // Navigate to service comments tab, highlight the specific comment
-          // Use parent_comment_id if it's a reply, otherwise use comment_id
           if (notification.data.service_id && notification.data.comment_id) {
             router.push({
               pathname: `/service/${notification.data.service_id}`,
