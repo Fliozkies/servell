@@ -38,7 +38,7 @@
     "nativewind": "^4.2.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "react-native": "0.83.4",
+    "react-native": "0.83.6",
     "react-native-gesture-handler": "~2.30.0",
     "react-native-google-mobile-ads": "^16.3.3",
     "react-native-google-places-autocomplete": "^2.6.4",
@@ -50,7 +50,7 @@
     "react-native-svg": "15.15.3",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.7.2"
+    "react-native-worklets": "0.7.4"
   },
   "devDependencies": {
     "@types/react": "~19.2.10",
@@ -59,5 +59,8 @@
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "uuid": "^14.0.0"
+  }
 }
