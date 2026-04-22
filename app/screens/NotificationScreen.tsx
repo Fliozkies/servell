@@ -36,6 +36,7 @@ import {
 } from "../../lib/api/notifications.api";
 import { supabase } from "../../lib/api/supabase";
 import { COLORS } from "../../lib/constants/theme";
+import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { Notification, NotificationType } from "../../lib/types/database.types";
 import { formatRelativeTime, isToday } from "../../lib/utils/date";
 

@@ -66,6 +66,7 @@ import {
 } from "../../lib/types/database.types";
 import { formatDisplayName, formatPrice } from "../../lib/utils/format";
 import { uploadImage } from "../../lib/utils/imageUtils";
+import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

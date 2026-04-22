@@ -7,9 +7,16 @@ import {
   Plus,
   User,
 } from "lucide-react-native";
-import React, { memo } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import React, { memo, useEffect, useRef } from "react";
+import {
+  Animated,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../constants/theme";
+import { useScrollDirection } from "../context/ScrollDirectionContext";
 import { PageName } from "../types/custom.types";
 import { formatBadge } from "../utils/format";
 
@@ -20,64 +27,96 @@ interface BottomNavProps {
   unreadNotifications?: number;
 }
 
+/** How far the nav slides down when hidden (nav height + bottom margin) */
+const HIDE_DISTANCE = 120;
+
 const BottomNav = memo(function BottomNav({
   currentTab,
   onTabPress,
   unreadMessages = 0,
-  unreadNotifications = 0,
 }: BottomNavProps) {
+  const insets = useSafeAreaInsets();
+  const { subscribe } = useScrollDirection();
+
+  // Starts visible (translateY = 0), slides down to hide
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const unsubscribe = subscribe((dir) => {
+      Animated.spring(translateY, {
+        toValue: dir === "down" ? HIDE_DISTANCE : 0,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 10,
+      }).start();
+    });
+    return unsubscribe;
+  }, [subscribe, translateY]);
+
   return (
-    <View>
-      <View className="flex-row items-center justify-between px-2 py-2">
+    <Animated.View
+      style={{
+        position: "absolute",
+        bottom: Math.max(insets.bottom, 12),
+        left: 16,
+        right: 16,
+        backgroundColor: "#FFFFFF",
+        borderRadius: 28,
+        paddingVertical: 10,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.35,
+        shadowRadius: 16,
+        elevation: 12,
+        transform: [{ translateY }],
+      }}
+    >
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-around",
+          paddingHorizontal: 8,
+        }}
+      >
         <NavButton
           name="Services"
-          label="Services"
           active={currentTab === "Services"}
           onPress={() => onTabPress("Services")}
-          icon={<Home size={22} />}
+          icon={<Home size={26} />}
         />
 
         <NavButton
           name="Map"
-          label="Map"
           active={currentTab === "Map"}
           onPress={() => onTabPress("Map")}
-          icon={<Map size={22} />}
+          icon={<Map size={26} />}
         />
 
-        {/* Central FAB */}
-        <TouchableOpacity
+        <NavButton
+          name="Post"
+          active={currentTab === "Post"}
           onPress={() => onTabPress("Post")}
-          activeOpacity={0.8}
-          className="bg-[#1877F2] w-10 h-10 rounded-full justify-center items-center"
-          style={{
-            shadowColor: "#818cf8",
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.4,
-            shadowRadius: 10,
-          }}
-        >
-          <Plus size={30} color="white" strokeWidth={3} />
-        </TouchableOpacity>
+          icon={<Plus size={26} />}
+          isPost
+        />
 
         <NavButton
-          label="Message"
           name="Message"
           active={currentTab === "Message"}
           onPress={() => onTabPress("Message")}
-          icon={<MessageSquare size={22} />}
+          icon={<MessageSquare size={26} />}
           badgeCount={unreadMessages}
         />
 
         <NavButton
           name="Profile"
-          label="Profile"
           active={currentTab === "Profile"}
           onPress={() => onTabPress("Profile")}
-          icon={<User size={22} />}
+          icon={<User size={26} />}
         />
       </View>
-    </View>
+    </Animated.View>
   );
 });
 
@@ -85,32 +124,155 @@ const BottomNav = memo(function BottomNav({
 
 const NavButton = memo(function NavButton({
   icon,
-  label,
   active,
   onPress,
   badgeCount = 0,
+  isPost = false,
 }: {
   icon: React.ReactElement<LucideProps>;
-  label: string;
   active: boolean;
   onPress: () => void;
   name: string;
   badgeCount?: number;
+  isPost?: boolean;
 }) {
   const badge = formatBadge(badgeCount);
   const isWide = badge.length > 1;
 
+  // Icon scale — shared by all buttons
+  const iconScale = useRef(new Animated.Value(active ? 1.15 : 1)).current;
+
+  // Regular tab: animated pill background
+  const pillScale = useRef(new Animated.Value(active ? 1 : 0.6)).current;
+  const pillOpacity = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+  // Post button: press-scale + icon rotation
+  const postPressScale = useRef(new Animated.Value(1)).current;
+  const postRotation = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+  useEffect(() => {
+    // Icon scale spring (all buttons)
+    Animated.spring(iconScale, {
+      toValue: active ? 1.18 : 1,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 7,
+    }).start();
+
+    if (isPost) {
+      // Rotate + → × when active
+      Animated.spring(postRotation, {
+        toValue: active ? 1 : 0,
+        useNativeDriver: true,
+        tension: 70,
+        friction: 7,
+      }).start();
+    } else {
+      // Pill pop-in / pop-out
+      Animated.parallel([
+        Animated.spring(pillScale, {
+          toValue: active ? 1 : 0.6,
+          useNativeDriver: true,
+          tension: 65,
+          friction: 8,
+        }),
+        Animated.timing(pillOpacity, {
+          toValue: active ? 1 : 0,
+          duration: 160,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [active, iconScale, isPost, pillOpacity, pillScale, postRotation]);
+
+  const rotate = postRotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "45deg"],
+  });
+
+  const handlePressIn = () => {
+    Animated.spring(postPressScale, {
+      toValue: 0.88,
+      useNativeDriver: true,
+      tension: 120,
+      friction: 6,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(postPressScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 5,
+    }).start();
+    onPress();
+  };
+
+  // ── Post (FAB-style) button ────────────────────────────────────────────────
+  if (isPost) {
+    return (
+      <TouchableOpacity
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={1}
+      >
+        <Animated.View
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: 25,
+            backgroundColor: COLORS.primary ?? "#2563EB",
+            alignItems: "center",
+            justifyContent: "center",
+            transform: [{ scale: postPressScale }],
+            shadowColor: COLORS.primary ?? "#2563EB",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.38,
+            shadowRadius: 8,
+            elevation: 6,
+          }}
+        >
+          <Animated.View style={{ transform: [{ rotate }] }}>
+            {React.cloneElement(icon, {
+              color: "#FFFFFF",
+              strokeWidth: 2.5,
+            })}
+          </Animated.View>
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  }
+
+  // ── Regular tab button ─────────────────────────────────────────────────────
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
-      className="items-center justify-center px-2 py-1"
+      className="items-center justify-center py-2.5 px-5"
     >
+      {/* Animated pill highlight */}
+      <Animated.View
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: 999,
+          backgroundColor: "rgba(24, 119, 242, 0.15)",
+          opacity: pillOpacity,
+          transform: [{ scale: pillScale }],
+        }}
+      />
+
       <View className="relative">
-        {React.cloneElement(icon, {
-          color: active ? COLORS.primary : COLORS.slate400,
-          strokeWidth: active ? 2.5 : 2,
-        })}
+        <Animated.View style={{ transform: [{ scale: iconScale }] }}>
+          {React.cloneElement(icon, {
+            color: active ? COLORS.primary : COLORS.slate400,
+            strokeWidth: active ? 2.5 : 2,
+          })}
+        </Animated.View>
 
         {badge ? (
           <View
@@ -130,14 +292,6 @@ const NavButton = memo(function NavButton({
           </View>
         ) : null}
       </View>
-
-      <Text
-        className={`text-[10px] mt-1 font-medium ${
-          active ? "color-[#1877F2]" : "text-slate-400"
-        }`}
-      >
-        {label}
-      </Text>
     </TouchableOpacity>
   );
 });

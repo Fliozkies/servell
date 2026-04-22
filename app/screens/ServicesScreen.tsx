@@ -24,6 +24,7 @@ import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { CategoryPill } from "../../lib/components/ServicesHeader";
 import { COLORS } from "../../lib/constants/theme";
 import { useDebounce } from "../../lib/hooks/useDebounce";
+import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { Category, ServiceWithDetails } from "../../lib/types/database.types";
 import { FilterOptions } from "../../lib/types/filter.types";
 import { formatPrice } from "../../lib/utils/format";

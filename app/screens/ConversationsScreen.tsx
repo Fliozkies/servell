@@ -23,6 +23,7 @@ import { COLORS } from "../../lib/constants/theme";
 import { ConversationWithDetails } from "../../lib/types/database.types";
 import { formatRelativeTime } from "../../lib/utils/date";
 import { formatDisplayName } from "../../lib/utils/format";
+import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 
 export default function ConversationsScreen() {
   const [conversations, setConversations] = useState<ConversationWithDetails[]>(
