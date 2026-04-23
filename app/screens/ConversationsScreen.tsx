@@ -20,10 +20,10 @@ import {
 } from "../../lib/api/messaging.api";
 import { supabase } from "../../lib/api/supabase";
 import { COLORS } from "../../lib/constants/theme";
+import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { ConversationWithDetails } from "../../lib/types/database.types";
 import { formatRelativeTime } from "../../lib/utils/date";
 import { formatDisplayName } from "../../lib/utils/format";
-import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 
 export default function ConversationsScreen() {
   const [conversations, setConversations] = useState<ConversationWithDetails[]>(
@@ -33,6 +33,10 @@ export default function ConversationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
+  const { createScrollHandler } = useScrollDirection();
+  const scrollHandler = useRef(createScrollHandler()).current;
+  // At the top of each screen component
+
   // Prevents multiple overlapping silent re-fetches when several realtime
   // events fire in quick succession (e.g. message INSERT + conversation UPDATE).
   const fetchInFlightRef = useRef(false);
@@ -198,6 +202,8 @@ export default function ConversationsScreen() {
           </View>
         ) : (
           <FlatList
+            onScroll={scrollHandler}
+            scrollEventThrottle={16}
             data={conversations}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}

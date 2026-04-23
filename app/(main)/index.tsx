@@ -155,22 +155,23 @@ export default function MainScreen() {
     });
   };
 
+  // ServicesHeader rendered as a scrollable element (not sticky)
+  const servicesHeader = (
+    <ServicesHeader
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      onFilterPress={() => setFilterModalVisible(true)}
+      onNotificationPress={() => setActiveTab("Notification")}
+      hasActiveFilters={!!hasActiveFilters}
+      unreadNotifications={counts.notifications}
+      categories={categories}
+      activeCategoryId={filters.categoryId}
+      onCategoryPress={handleCategoryPress}
+    />
+  );
+
   return (
     <SafeAreaView className="bg-white flex-1" edges={["top", "left", "right"]}>
-      {activeTab === "Services" && (
-        <ServicesHeader
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          onFilterPress={() => setFilterModalVisible(true)}
-          onNotificationPress={() => setActiveTab("Notification")}
-          hasActiveFilters={!!hasActiveFilters}
-          unreadNotifications={counts.notifications}
-          categories={categories}
-          activeCategoryId={filters.categoryId}
-          onCategoryPress={handleCategoryPress}
-        />
-      )}
-
       <View className="flex-1">
         <View
           style={{
@@ -187,6 +188,8 @@ export default function MainScreen() {
             onFiltersChange={setFilters}
             onCategoriesLoaded={setCategories}
             effectiveUserLocation={effectiveUserLocation}
+            // Pass header as a prop so it scrolls with the content
+            listHeader={servicesHeader}
           />
         </View>
 

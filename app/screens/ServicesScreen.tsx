@@ -1,7 +1,7 @@
 // app/screens/ServicesScreen.tsx
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -24,6 +24,7 @@ import { BoostServiceModal } from "../../lib/components/BoostServiceModal";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { CategoryPill } from "../../lib/components/ServicesHeader";
 import { COLORS } from "../../lib/constants/theme";
+import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
 import { useDebounce } from "../../lib/hooks/useDebounce";
 import { Category, ServiceWithDetails } from "../../lib/types/database.types";
@@ -522,6 +523,8 @@ type ServicesScreenProps = {
   onCategoriesLoaded?: (pills: CategoryPill[]) => void;
   /** Effective user location (GPS or profile fallback) — passed through for See all navigation */
   effectiveUserLocation?: import("../../lib/types/filter.types").UserLocation;
+  /** Optional header element to render at the top of the scroll content (non-sticky) */
+  listHeader?: ReactNode;
 };
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -534,6 +537,7 @@ export default function ServicesScreen({
   onFiltersChange,
   onCategoriesLoaded,
   effectiveUserLocation,
+  listHeader,
 }: ServicesScreenProps) {
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [boostedServices, setBoostedServices] = useState<ServiceWithDetails[]>(
@@ -547,6 +551,9 @@ export default function ServicesScreen({
   const [isBoostModalVisible, setIsBoostModalVisible] = useState(false);
 
   const userId = useCurrentUserId();
+
+  const { createScrollHandler } = useScrollDirection();
+  const scrollHandler = useRef(createScrollHandler()).current;
 
   const debouncedSearch = useDebounce(searchQuery, 400);
 
@@ -659,6 +666,7 @@ export default function ServicesScreen({
   if (loading && !refreshing) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-50">
+        {listHeader}
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text className="mt-4 text-slate-600">Loading services...</Text>
       </View>
@@ -668,6 +676,7 @@ export default function ServicesScreen({
   if (error && !refreshing) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-50 px-8">
+        {listHeader}
         <AntDesign name="exclamation-circle" size={48} color={COLORS.danger} />
         <Text className="mt-4 text-slate-800 font-semibold text-center">
           {error}
@@ -696,6 +705,7 @@ export default function ServicesScreen({
             />
           }
         >
+          {listHeader}
           <View className="flex-1 items-center justify-center bg-slate-50 px-8">
             <AntDesign name="inbox" size={64} color={COLORS.slate400} />
             <Text className="mt-4 text-slate-800 font-semibold text-lg">
@@ -719,11 +729,14 @@ export default function ServicesScreen({
     return (
       <View className="flex-1">
         <FlatList
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
           data={services}
           numColumns={2}
           columnWrapperStyle={{ justifyContent: "space-between" }}
           contentContainerStyle={{ padding: 16 }}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={listHeader ? () => <>{listHeader}</> : undefined}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -760,6 +773,7 @@ export default function ServicesScreen({
           />
         }
       >
+        {listHeader}
         <View className="flex-1 items-center justify-center bg-slate-50 px-8">
           <AntDesign name="inbox" size={64} color={COLORS.slate400} />
           <Text className="mt-4 text-slate-800 font-semibold text-lg">
@@ -782,11 +796,11 @@ export default function ServicesScreen({
 
   return (
     <View style={{ flex: 1 }}>
-      {/* ── Ad Banner — must live outside ScrollView to avoid Fabric addViewAt crash ── */}
-      <AdBanner marginVertical={4} />
       <ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         style={{ flex: 1, backgroundColor: COLORS.slate100 }}
-        contentContainerStyle={{ padding: 16, gap: 20 }}
+        contentContainerStyle={{ gap: 20 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -797,81 +811,93 @@ export default function ServicesScreen({
           />
         }
       >
-        {/* ── Featured ── */}
-        {featuredService && (
-          <View>
-            <SectionHeader title="Featured" />
-            <FeaturedCard
-              service={featuredService}
-              isBoosted={featuredIsBoosted}
-            />
-          </View>
+        {/* ── Header (scrolls with content, not sticky) ── */}
+        {listHeader && (
+          <View style={{ backgroundColor: "#fff" }}>{listHeader}</View>
         )}
 
-        {/* ── Nearest to you ── */}
-        {nearestServices.length > 0 && (
-          <View>
-            <SectionHeader
-              title="Nearest to you"
-              action="See all"
-              onAction={() =>
-                router.push({
-                  pathname: "/services-list",
-                  params: {
-                    title: "Nearest to You",
-                    sort: "nearest",
-                    ...(effectiveUserLocation && {
-                      userLocationLat: String(effectiveUserLocation.latitude),
-                      userLocationLng: String(effectiveUserLocation.longitude),
-                    }),
-                  },
-                })
-              }
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 10 }}
-            >
-              {nearestServices.map((s) => (
-                <MiniCard key={s.id} service={s} />
-              ))}
-            </ScrollView>
-          </View>
-        )}
+        {/* ── Ad Banner ── */}
+        <AdBanner marginVertical={4} />
 
-        {/* ── Promo banner ── */}
-        <PromoBanner onPress={() => setIsBoostModalVisible(true)} />
-
-        {/* ── Top rated ── */}
-        {topRatedServices.length > 0 && (
-          <View>
-            <SectionHeader
-              title="Top rated"
-              action="See all"
-              onAction={() =>
-                router.push({
-                  pathname: "/services-list",
-                  params: { title: "Top Rated", sort: "rating_high" },
-                })
-              }
-            />
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                justifyContent: "space-between",
-              }}
-            >
-              {topRatedServices.map((s) => (
-                <GridCard key={s.id} service={s} />
-              ))}
+        <View style={{ paddingHorizontal: 16, gap: 20 }}>
+          {/* ── Featured ── */}
+          {featuredService && (
+            <View>
+              <SectionHeader title="Featured" />
+              <FeaturedCard
+                service={featuredService}
+                isBoosted={featuredIsBoosted}
+              />
             </View>
-          </View>
-        )}
+          )}
 
-        {/* Bottom padding */}
-        <View style={{ height: 8 }} />
+          {/* ── Nearest to you ── */}
+          {nearestServices.length > 0 && (
+            <View>
+              <SectionHeader
+                title="Nearest to you"
+                action="See all"
+                onAction={() =>
+                  router.push({
+                    pathname: "/services-list",
+                    params: {
+                      title: "Nearest to You",
+                      sort: "nearest",
+                      ...(effectiveUserLocation && {
+                        userLocationLat: String(effectiveUserLocation.latitude),
+                        userLocationLng: String(
+                          effectiveUserLocation.longitude,
+                        ),
+                      }),
+                    },
+                  })
+                }
+              />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 10 }}
+              >
+                {nearestServices.map((s) => (
+                  <MiniCard key={s.id} service={s} />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* ── Promo banner ── */}
+          <PromoBanner onPress={() => setIsBoostModalVisible(true)} />
+
+          {/* ── Top rated ── */}
+          {topRatedServices.length > 0 && (
+            <View>
+              <SectionHeader
+                title="Top rated"
+                action="See all"
+                onAction={() =>
+                  router.push({
+                    pathname: "/services-list",
+                    params: { title: "Top Rated", sort: "rating_high" },
+                  })
+                }
+              />
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  justifyContent: "space-between",
+                }}
+              >
+                {topRatedServices.map((s) => (
+                  <GridCard key={s.id} service={s} />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Bottom padding */}
+          <View style={{ height: 8 }} />
+        </View>
       </ScrollView>
 
       <FilterBottomSheet

@@ -12,12 +12,15 @@
 
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
   FlatList,
   Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   RefreshControl,
   Text,
   TouchableOpacity,
@@ -25,7 +28,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { searchAndFilterServices } from "../../lib/api/services.api";
+import BottomNav from "../../lib/components/BottomNav";
 import { COLORS } from "../../lib/constants/theme";
+import {
+  ScrollDirectionProvider,
+  useScrollDirection,
+} from "../../lib/context/ScrollDirectionContext";
+import { useUnreadCounts } from "../../lib/hooks/useUnreadCounts";
+import { PageName } from "../../lib/types/custom.types";
 import { ServiceWithDetails } from "../../lib/types/database.types";
 import { SortOption, UserLocation } from "../../lib/types/filter.types";
 import { formatPrice } from "../../lib/utils/format";
@@ -33,7 +43,10 @@ import { formatPrice } from "../../lib/utils/format";
 const { width } = Dimensions.get("window");
 const COLUMN_WIDTH = (width - 48) / 2;
 
-// ── Service Card (same as ServicesScreen) ─────────────────────────────────────
+// How far the user must scroll before the scroll-to-top button appears
+const SCROLL_TO_TOP_THRESHOLD = 400;
+
+// ── Service Card ──────────────────────────────────────────────────────────────
 
 function formatAuthor(service: ServiceWithDetails): string {
   if (service.profile?.first_name) {
@@ -186,7 +199,7 @@ const ServiceCard = ({
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-export default function ServiceListScreen() {
+function ServiceListScreenInner() {
   const params = useLocalSearchParams<{
     title: string;
     sort?: SortOption;
@@ -215,6 +228,45 @@ export default function ServiceListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // BottomNav
+  const [activeTab] = useState<PageName>("Services");
+  const { counts } = useUnreadCounts();
+  const { createScrollHandler } = useScrollDirection();
+  const scrollHandler = useRef(createScrollHandler()).current;
+
+  // Scroll-to-top button
+  const flatListRef = useRef<FlatList>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scrollY = useRef(0);
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Feed into scroll direction context (for BottomNav hide/show)
+      scrollHandler(e);
+
+      // Track Y position for scroll-to-top button
+      const y = e.nativeEvent.contentOffset.y;
+      scrollY.current = y;
+      const shouldShow = y > SCROLL_TO_TOP_THRESHOLD;
+      setShowScrollTop((prev) => {
+        if (prev !== shouldShow) {
+          Animated.timing(fadeAnim, {
+            toValue: shouldShow ? 1 : 0,
+            duration: 200,
+            useNativeDriver: true,
+          }).start();
+        }
+        return shouldShow;
+      });
+    },
+    [scrollHandler, fadeAnim],
+  );
+
+  const scrollToTop = () => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+  };
+
   const load = useCallback(async () => {
     try {
       setError(null);
@@ -241,10 +293,17 @@ export default function ServiceListScreen() {
     load();
   };
 
+  const handleTabPress = (_tab: PageName) => {
+    router.back();
+  };
+
   const showDistance = sort === "nearest" && userLocation != null;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: "#fff" }}
+      edges={["top", "left", "right"]}
+    >
       {/* Header */}
       <View
         style={{
@@ -285,92 +344,150 @@ export default function ServiceListScreen() {
       </View>
 
       {/* Content */}
-      {loading && !refreshing ? (
-        <View
-          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-        >
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={{ marginTop: 12, color: COLORS.slate500, fontSize: 13 }}>
-            Loading…
-          </Text>
-        </View>
-      ) : error ? (
-        <View
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            paddingHorizontal: 32,
-          }}
-        >
-          <AntDesign
-            name="exclamation-circle"
-            size={48}
-            color={COLORS.danger}
-          />
-          <Text
+      <View style={{ flex: 1 }}>
+        {loading && !refreshing ? (
+          <View
+            style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+          >
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text
+              style={{ marginTop: 12, color: COLORS.slate500, fontSize: 13 }}
+            >
+              Loading…
+            </Text>
+          </View>
+        ) : error ? (
+          <View
             style={{
-              marginTop: 12,
-              color: "#0f172a",
-              fontWeight: "600",
-              textAlign: "center",
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingHorizontal: 32,
             }}
           >
-            {error}
-          </Text>
-        </View>
-      ) : services.length === 0 ? (
-        <View
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            paddingHorizontal: 32,
-          }}
-        >
-          <AntDesign name="inbox" size={64} color={COLORS.slate300} />
-          <Text
-            style={{
-              marginTop: 12,
-              fontSize: 16,
-              fontWeight: "600",
-              color: "#0f172a",
-            }}
-          >
-            No services found
-          </Text>
-          <Text
-            style={{
-              marginTop: 6,
-              fontSize: 13,
-              color: COLORS.slate500,
-              textAlign: "center",
-            }}
-          >
-            Try a different category or check back later
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={services}
-          numColumns={2}
-          keyExtractor={(item) => item.id}
-          columnWrapperStyle={{ justifyContent: "space-between" }}
-          contentContainerStyle={{ padding: 16 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[COLORS.primary]}
-              tintColor={COLORS.primary}
+            <AntDesign
+              name="exclamation-circle"
+              size={48}
+              color={COLORS.danger}
             />
-          }
-          renderItem={({ item }) => (
-            <ServiceCard service={item} showDistance={showDistance} />
-          )}
-        />
-      )}
+            <Text
+              style={{
+                marginTop: 12,
+                color: "#0f172a",
+                fontWeight: "600",
+                textAlign: "center",
+              }}
+            >
+              {error}
+            </Text>
+          </View>
+        ) : services.length === 0 ? (
+          <View
+            style={{
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingHorizontal: 32,
+            }}
+          >
+            <AntDesign name="inbox" size={64} color={COLORS.slate300} />
+            <Text
+              style={{
+                marginTop: 12,
+                fontSize: 16,
+                fontWeight: "600",
+                color: "#0f172a",
+              }}
+            >
+              No services found
+            </Text>
+            <Text
+              style={{
+                marginTop: 6,
+                fontSize: 13,
+                color: COLORS.slate500,
+                textAlign: "center",
+              }}
+            >
+              Try a different category or check back later
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={services}
+            numColumns={2}
+            keyExtractor={(item) => item.id}
+            columnWrapperStyle={{ justifyContent: "space-between" }}
+            contentContainerStyle={{ padding: 16 }}
+            showsVerticalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[COLORS.primary]}
+                tintColor={COLORS.primary}
+              />
+            }
+            renderItem={({ item }) => (
+              <ServiceCard service={item} showDistance={showDistance} />
+            )}
+          />
+        )}
+
+        {/* Scroll-to-top button — floats above BottomNav */}
+        <Animated.View
+          pointerEvents={showScrollTop ? "auto" : "none"}
+          style={{
+            position: "absolute",
+            bottom: 16,
+            alignSelf: "center",
+            opacity: fadeAnim,
+          }}
+        >
+          <TouchableOpacity
+            onPress={scrollToTop}
+            activeOpacity={0.85}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: COLORS.primary,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 24,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.2,
+              shadowRadius: 6,
+              elevation: 5,
+            }}
+          >
+            <AntDesign name="arrow-up" size={14} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
+              Back to top
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+
+      {/* Bottom Nav */}
+      <BottomNav
+        currentTab={activeTab}
+        onTabPress={handleTabPress}
+        unreadMessages={counts.messages}
+        unreadNotifications={counts.notifications}
+      />
     </SafeAreaView>
+  );
+}
+
+export default function ServiceListScreen() {
+  return (
+    <ScrollDirectionProvider>
+      <ServiceListScreenInner />
+    </ScrollDirectionProvider>
   );
 }

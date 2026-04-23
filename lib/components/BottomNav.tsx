@@ -10,9 +10,11 @@ import {
 import React, { memo, useEffect, useRef } from "react";
 import {
   Animated,
+  Easing,
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../constants/theme";
@@ -27,8 +29,15 @@ interface BottomNavProps {
   unreadNotifications?: number;
 }
 
-/** How far the nav slides down when hidden (nav height + bottom margin) */
-const HIDE_DISTANCE = 120;
+/**
+ * Scale a base value by the ratio of the screen width to a 390-pt baseline
+ * (iPhone 14 width), clamped between 0.85× and 1.25× so it never looks
+ * absurd on very small or very large screens.
+ */
+function useResponsiveScale() {
+  const { width } = useWindowDimensions();
+  return Math.min(Math.max(width / 390, 0.85), 1.25);
+}
 
 const BottomNav = memo(function BottomNav({
   currentTab,
@@ -37,32 +46,42 @@ const BottomNav = memo(function BottomNav({
 }: BottomNavProps) {
   const insets = useSafeAreaInsets();
   const { subscribe } = useScrollDirection();
+  const scale = useResponsiveScale();
+
+  // Responsive spacing values
+  const bottomMargin = Math.max(insets.bottom + Math.round(16 * scale), 24);
+  const sideMargin = Math.round(16 * scale);
+  const borderRadius = Math.round(28 * scale);
+  const paddingV = Math.round(10 * scale);
+
+  /** How far to slide down when hidden — nav height + bottom margin */
+  const HIDE_DISTANCE = 110 + bottomMargin;
 
   // Starts visible (translateY = 0), slides down to hide
   const translateY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const unsubscribe = subscribe((dir) => {
-      Animated.spring(translateY, {
+      Animated.timing(translateY, {
         toValue: dir === "down" ? HIDE_DISTANCE : 0,
+        duration: 280,
+        easing: Easing.bezier(0.4, 0, 0.2, 1), // Material Design standard curve
         useNativeDriver: true,
-        tension: 65,
-        friction: 10,
       }).start();
     });
     return unsubscribe;
-  }, [subscribe, translateY]);
+  }, [subscribe, translateY, HIDE_DISTANCE]);
 
   return (
     <Animated.View
       style={{
         position: "absolute",
-        bottom: Math.max(insets.bottom, 12),
-        left: 16,
-        right: 16,
+        bottom: bottomMargin,
+        left: sideMargin,
+        right: sideMargin,
         backgroundColor: "#FFFFFF",
-        borderRadius: 28,
-        paddingVertical: 10,
+        borderRadius,
+        paddingVertical: paddingV,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.35,

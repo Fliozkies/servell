@@ -57,6 +57,7 @@ import { ProfileAvatar } from "../../lib/components/ui/ProfileAvatar";
 import { TabBar } from "../../lib/components/ui/TabBar";
 import { TagInput } from "../../lib/components/ui/TagInput";
 import { COLORS } from "../../lib/constants/theme";
+import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import {
   useServiceForm,
   validateServiceForm,
@@ -114,6 +115,9 @@ export default function ProfileScreen() {
   const reviewsLoadedRef = useRef(false);
   const actionSheetSlide = useRef(new Animated.Value(0)).current;
   const actionSheetBackdrop = useRef(new Animated.Value(0)).current;
+
+  const { createScrollHandler } = useScrollDirection();
+  const scrollHandler = useRef(createScrollHandler()).current;
 
   // ── Data loaders ───────────────────────────────────────────────────────────
 
@@ -385,6 +389,8 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         className="flex-1"
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -921,7 +927,7 @@ const EditServiceModal = ({
   onSaved: (updated: Service) => void;
 }) => {
   const [saving, setSaving] = useState(false);
-  const form = useServiceForm(service);
+  const form = useServiceForm(visible ? service : null);
 
   const handleSave = async () => {
     if (
