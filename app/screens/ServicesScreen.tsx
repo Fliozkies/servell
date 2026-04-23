@@ -20,11 +20,12 @@ import {
   searchAndFilterServices,
 } from "../../lib/api/services.api";
 import AdBanner from "../../lib/components/AdBanner";
+import { BoostServiceModal } from "../../lib/components/BoostServiceModal";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { CategoryPill } from "../../lib/components/ServicesHeader";
 import { COLORS } from "../../lib/constants/theme";
+import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
 import { useDebounce } from "../../lib/hooks/useDebounce";
-import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { Category, ServiceWithDetails } from "../../lib/types/database.types";
 import { FilterOptions } from "../../lib/types/filter.types";
 import { formatPrice } from "../../lib/utils/format";
@@ -543,6 +544,9 @@ export default function ServicesScreen({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isBoostModalVisible, setIsBoostModalVisible] = useState(false);
+
+  const userId = useCurrentUserId();
 
   const debouncedSearch = useDebounce(searchQuery, 400);
 
@@ -837,7 +841,7 @@ export default function ServicesScreen({
         )}
 
         {/* ── Promo banner ── */}
-        <PromoBanner />
+        <PromoBanner onPress={() => setIsBoostModalVisible(true)} />
 
         {/* ── Top rated ── */}
         {topRatedServices.length > 0 && (
@@ -875,6 +879,12 @@ export default function ServicesScreen({
         onClose={onFilterModalClose}
         onApply={onFiltersChange}
         currentFilters={filters}
+      />
+
+      <BoostServiceModal
+        visible={isBoostModalVisible}
+        userId={userId}
+        onClose={() => setIsBoostModalVisible(false)}
       />
     </View>
   );

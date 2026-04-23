@@ -532,3 +532,40 @@ export async function updateServiceStatusRPC(
     throw error;
   }
 }
+
+// ── Boost ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Apply a boost to a service using the DB function `apply_service_boost`.
+ * @param serviceId  UUID of the service to boost
+ * @param tier       "standard" | "premium"
+ * @param days       Number of days to boost (e.g. 3, 7, 14, 30)
+ */
+export async function boostService(
+  serviceId: string,
+  tier: "standard" | "premium",
+  days: number,
+): Promise<void> {
+  const { error } = await supabase.rpc("apply_service_boost", {
+    service_id: serviceId,
+    tier,
+    days,
+  });
+  if (error) {
+    console.error("Error boosting service:", error);
+    throw error;
+  }
+}
+
+/**
+ * Cancel an active boost on a service using the DB function `cancel_service_boost`.
+ */
+export async function cancelServiceBoost(serviceId: string): Promise<void> {
+  const { error } = await supabase.rpc("cancel_service_boost", {
+    service_id: serviceId,
+  });
+  if (error) {
+    console.error("Error cancelling boost:", error);
+    throw error;
+  }
+}

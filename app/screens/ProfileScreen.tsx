@@ -23,6 +23,7 @@ import {
   UserMinus,
   Users,
   X,
+  Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -49,6 +50,7 @@ import {
   unsubscribeFromProvider,
 } from "../../lib/api/subscriptions.api";
 import { supabase } from "../../lib/api/supabase";
+import { BoostServiceModal } from "../../lib/components/BoostServiceModal";
 import { ProfileImageModal } from "../../lib/components/ProfileImageModal";
 import { FormField } from "../../lib/components/ui/FormField";
 import { ProfileAvatar } from "../../lib/components/ui/ProfileAvatar";
@@ -66,7 +68,6 @@ import {
 } from "../../lib/types/database.types";
 import { formatDisplayName, formatPrice } from "../../lib/utils/format";
 import { uploadImage } from "../../lib/utils/imageUtils";
-import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,7 @@ export default function ProfileScreen() {
   const [serviceToEdit, setServiceToEdit] = useState<Service | null>(null);
   const [isProfileImageModalVisible, setIsProfileImageModalVisible] =
     useState(false);
+  const [isBoostModalVisible, setIsBoostModalVisible] = useState(false);
 
   const subscriptionsLoadedRef = useRef(false);
   const reviewsLoadedRef = useRef(false);
@@ -563,6 +565,20 @@ export default function ProfileScreen() {
                 }}
               />
               <MenuOption
+                icon={<Zap size={20} color="#7c3aed" />}
+                label={
+                  serviceToEdit?.boosted_until &&
+                  new Date(serviceToEdit.boosted_until) > new Date()
+                    ? "Manage Boost"
+                    : "Boost Service"
+                }
+                onPress={() => {
+                  closeActionSheet(() =>
+                    setTimeout(() => setIsBoostModalVisible(true), 300),
+                  );
+                }}
+              />
+              <MenuOption
                 icon={
                   serviceToEdit?.status === "active" ? (
                     <AlertCircle size={20} color="#f97316" />
@@ -603,6 +619,7 @@ export default function ProfileScreen() {
 
       {serviceToEdit && (
         <EditServiceModal
+          key={serviceToEdit.id}
           visible={isEditServiceVisible}
           service={serviceToEdit}
           onClose={() => setIsEditServiceVisible(false)}
@@ -614,6 +631,17 @@ export default function ProfileScreen() {
           }}
         />
       )}
+
+      <BoostServiceModal
+        visible={isBoostModalVisible}
+        service={serviceToEdit}
+        onClose={() => setIsBoostModalVisible(false)}
+        onBoosted={(updated) => {
+          setServices((prev) =>
+            prev.map((s) => (s.id === updated.id ? updated : s)),
+          );
+        }}
+      />
 
       <SettingsModal
         visible={isSettingsVisible}
@@ -721,6 +749,47 @@ const ServiceCard = ({
               {service.status}
             </Text>
           </View>
+          {service.boosted_until &&
+            new Date(service.boosted_until) > new Date() && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor:
+                    service.boost_tier === "premium" ? "#f5f3ff" : "#EEF4FF",
+                  borderRadius: 20,
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  gap: 3,
+                }}
+              >
+                <Zap
+                  size={9}
+                  color={
+                    service.boost_tier === "premium"
+                      ? "#7c3aed"
+                      : COLORS.primary
+                  }
+                  fill={
+                    service.boost_tier === "premium"
+                      ? "#7c3aed"
+                      : COLORS.primary
+                  }
+                />
+                <Text
+                  style={{
+                    fontSize: 9,
+                    fontWeight: "700",
+                    color:
+                      service.boost_tier === "premium"
+                        ? "#7c3aed"
+                        : COLORS.primary,
+                  }}
+                >
+                  {service.boost_tier === "premium" ? "PREMIUM" : "BOOSTED"}
+                </Text>
+              </View>
+            )}
         </View>
         <Text
           className="text-base font-semibold text-slate-900"
@@ -852,7 +921,7 @@ const EditServiceModal = ({
   onSaved: (updated: Service) => void;
 }) => {
   const [saving, setSaving] = useState(false);
-  const form = useServiceForm(visible ? service : null);
+  const form = useServiceForm(service);
 
   const handleSave = async () => {
     if (

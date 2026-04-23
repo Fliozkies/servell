@@ -156,7 +156,7 @@ export default function MainScreen() {
   };
 
   return (
-    <SafeAreaView className="bg-white flex-1"  edges={["top", "left", "right"]}>
+    <SafeAreaView className="bg-white flex-1" edges={["top", "left", "right"]}>
       {activeTab === "Services" && (
         <ServicesHeader
           searchQuery={searchQuery}
