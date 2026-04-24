@@ -1,13 +1,7 @@
-// lib/components/AddCommentModal.tsx
-//
-// Reused for:
-//  - Adding/replying to comments (Comments tab)
-//  - Provider replying to a review (Reviews tab) via replyToReview prop
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Modal,
   StyleSheet,
@@ -18,8 +12,7 @@ import {
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { createComment } from "../api/comments.api";
-import { createReviewReply, updateReviewReply } from "../api/reviews.api";
+import { useCommentSubmit } from "../hooks/useCommentSubmit";
 import { CommentWithDetails, ReviewWithDetails } from "../types/database.types";
 
 type AddCommentModalProps = {
@@ -27,9 +20,7 @@ type AddCommentModalProps = {
   onClose: () => void;
   serviceId: string;
   onSubmit: (newComment?: CommentWithDetails) => void;
-  /** For comment replies */
   replyingTo?: CommentWithDetails | null;
-  /** For provider replying to a review — mutually exclusive with replyingTo */
   replyToReview?: ReviewWithDetails | null;
 };
 
@@ -42,7 +33,6 @@ export default function AddCommentModal({
   replyToReview,
 }: AddCommentModalProps) {
   const [content, setContent] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
@@ -50,13 +40,14 @@ export default function AddCommentModal({
   const slideAnim = useRef(new Animated.Value(0)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
 
+  const { submit, submitting } = useCommentSubmit();
+
   const isReviewReply = !!replyToReview;
   const isCommentReply = !!replyingTo;
   const charLimit = isReviewReply ? 1000 : 500;
 
   useEffect(() => {
     if (visible) {
-      // Pre-fill with existing review reply content if editing
       if (isReviewReply && replyToReview?.review_reply?.content) {
         setContent(replyToReview.review_reply.content);
       } else {
@@ -97,44 +88,18 @@ export default function AddCommentModal({
   }, [visible, isReviewReply, replyToReview, slideAnim, backdropOpacity]);
 
   const handleSubmit = async () => {
-    if (!content.trim()) return;
+    if (!content.trim() || submitting) return;
     try {
-      setSubmitting(true);
-
-      if (isReviewReply && replyToReview) {
-        // Provider replying to a review
-        if (replyToReview.review_reply) {
-          await updateReviewReply(
-            replyToReview.review_reply.id,
-            content.trim(),
-          );
-        } else {
-          await createReviewReply({
-            review_id: replyToReview.id,
-            service_id: serviceId,
-            content: content.trim(),
-          });
-        }
-        onSubmit();
-      } else {
-        // Regular comment or comment reply
-        const parentId = replyingTo?.parent_comment_id
-          ? replyingTo.parent_comment_id
-          : replyingTo?.id;
-
-        const newComment = await createComment({
-          service_id: serviceId,
-          content: content.trim(),
-          parent_comment_id: parentId,
-        });
-        onSubmit(newComment);
-      }
-
+      const newComment = await submit({
+        serviceId,
+        replyingTo,
+        replyToReview,
+        content,
+      });
+      onSubmit(newComment ?? undefined);
       handleClose();
-    } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to submit");
-    } finally {
-      setSubmitting(false);
+    } catch {
+      // Error already handled in hook
     }
   };
 
@@ -145,7 +110,7 @@ export default function AddCommentModal({
 
   const canSubmit = content.trim().length > 0 && !submitting;
 
-  // ── Header labels ──────────────────────────────────────────────────────────
+  // ── Header configuration ────────────────────────────────────────
   let headerIcon: "return-down-forward" | "chatbubble-ellipses" | "create" =
     "chatbubble-ellipses";
   let headerIconColor = "#3b82f6";
@@ -182,7 +147,6 @@ export default function AddCommentModal({
       transparent={true}
       onRequestClose={handleClose}
     >
-      {/* Fixed backdrop — never moves, only fades */}
       <Animated.View
         style={[
           StyleSheet.absoluteFillObject,
@@ -196,7 +160,6 @@ export default function AddCommentModal({
         onPress={handleClose}
       />
 
-      {/* KeyboardAvoidingView wraps the whole bottom area so the sheet lifts with keyboard */}
       <KeyboardAvoidingView
         behavior="padding"
         style={styles.kavOuter}
@@ -259,7 +222,7 @@ export default function AddCommentModal({
               </TouchableOpacity>
             </View>
 
-            {/* Quoted text */}
+            {/* Quoted text if replying */}
             {quotedText && (
               <View style={styles.quotedComment}>
                 <View
@@ -352,9 +315,7 @@ const styles = StyleSheet.create({
     right: 0,
     maxHeight: "85%",
   },
-  sheetContainer: {
-    // KAV owns the bottom positioning now
-  },
+  sheetContainer: {},
   sheet: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 28,

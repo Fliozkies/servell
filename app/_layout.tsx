@@ -3,24 +3,27 @@ import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import "../global.css";
+import { ErrorBoundary } from "../lib/components/ErrorBoundary";
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <KeyboardProvider>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(main)" />
-          {/* Service detail is a full-screen push route */}
-          <Stack.Screen name="service/[id]" />
-          {/* Chat is a full-screen push route */}
-          <Stack.Screen name="chat/[conversationId]" />
-          {/* Full service list — Top Rated, Nearest, by Category */}
-          <Stack.Screen name="services-list/index" />
-        </Stack>
-      </KeyboardProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <KeyboardProvider>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(main)" />
+            {/* Service detail is a full-screen push route */}
+            <Stack.Screen name="service/[id]" />
+            {/* Chat is a full-screen push route */}
+            <Stack.Screen name="chat/[conversationId]" />
+            {/* Full service list — Top Rated, Nearest, by Category */}
+            <Stack.Screen name="services-list/index" />
+          </Stack>
+        </KeyboardProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

@@ -26,7 +26,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { searchAndFilterServices } from "../../lib/api/services.api";
 import BottomNav from "../../lib/components/BottomNav";
 import { COLORS } from "../../lib/constants/theme";
@@ -43,7 +46,7 @@ import { formatPrice } from "../../lib/utils/format";
 const { width } = Dimensions.get("window");
 const COLUMN_WIDTH = (width - 48) / 2;
 
-// How far the user must scroll before the scroll-to-top button appears
+// How far down before the scroll-to-top button appears
 const SCROLL_TO_TOP_THRESHOLD = 400;
 
 // ── Service Card ──────────────────────────────────────────────────────────────
@@ -223,6 +226,8 @@ function ServiceListScreenInner() {
     [params.userLocationLat, params.userLocationLng],
   );
 
+  const insets = useSafeAreaInsets();
+
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -232,22 +237,23 @@ function ServiceListScreenInner() {
   const [activeTab] = useState<PageName>("Services");
   const { counts } = useUnreadCounts();
   const { createScrollHandler } = useScrollDirection();
-  const scrollHandler = useRef(createScrollHandler()).current;
+  const scrollDirectionHandler = useRef(createScrollHandler()).current;
 
-  // Scroll-to-top button
+  // Scroll-to-top
   const flatListRef = useRef<FlatList>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scrollY = useRef(0);
+
+  // BottomNav is position:absolute with bottom = insets.bottom + 16 (min 24),
+  // and its own height is ~60px. Add 16px gap above it.
+  const navBottom = Math.max(insets.bottom + 16, 24);
+  const scrollTopBottom = navBottom + 60 + 16;
 
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      // Feed into scroll direction context (for BottomNav hide/show)
-      scrollHandler(e);
+      scrollDirectionHandler(e);
 
-      // Track Y position for scroll-to-top button
       const y = e.nativeEvent.contentOffset.y;
-      scrollY.current = y;
       const shouldShow = y > SCROLL_TO_TOP_THRESHOLD;
       setShowScrollTop((prev) => {
         if (prev !== shouldShow) {
@@ -260,7 +266,7 @@ function ServiceListScreenInner() {
         return shouldShow;
       });
     },
-    [scrollHandler, fadeAnim],
+    [scrollDirectionHandler, fadeAnim],
   );
 
   const scrollToTop = () => {
@@ -436,50 +442,50 @@ function ServiceListScreenInner() {
             )}
           />
         )}
-
-        {/* Scroll-to-top button — floats above BottomNav */}
-        <Animated.View
-          pointerEvents={showScrollTop ? "auto" : "none"}
-          style={{
-            position: "absolute",
-            bottom: 16,
-            alignSelf: "center",
-            opacity: fadeAnim,
-          }}
-        >
-          <TouchableOpacity
-            onPress={scrollToTop}
-            activeOpacity={0.85}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              backgroundColor: COLORS.primary,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderRadius: 24,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.2,
-              shadowRadius: 6,
-              elevation: 5,
-            }}
-          >
-            <AntDesign name="arrow-up" size={14} color="#fff" />
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
-              Back to top
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
       </View>
 
-      {/* Bottom Nav */}
+      {/* BottomNav — position:absolute internally, renders over content */}
       <BottomNav
         currentTab={activeTab}
         onTabPress={handleTabPress}
         unreadMessages={counts.messages}
         unreadNotifications={counts.notifications}
       />
+
+      {/* Scroll-to-top — position:absolute at screen level, above BottomNav */}
+      <Animated.View
+        pointerEvents={showScrollTop ? "auto" : "none"}
+        style={{
+          position: "absolute",
+          bottom: scrollTopBottom,
+          alignSelf: "center",
+          opacity: fadeAnim,
+        }}
+      >
+        <TouchableOpacity
+          onPress={scrollToTop}
+          activeOpacity={0.85}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: COLORS.primary,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 24,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.2,
+            shadowRadius: 6,
+            elevation: 5,
+          }}
+        >
+          <AntDesign name="arrow-up" size={14} color="#fff" />
+          <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>
+            Back to top
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
     </SafeAreaView>
   );
 }
