@@ -1,5 +1,4 @@
 // app/screens/ConversationsScreen.tsx
-// Previously: app/juarez_app/pages/conversations.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -25,29 +24,35 @@ import { ConversationWithDetails } from "../../lib/types/database.types";
 import { formatRelativeTime } from "../../lib/utils/date";
 import { formatDisplayName } from "../../lib/utils/format";
 
+// Module-level cache — survives component unmount/remount (navigation back & forth).
+// Initialising useState from this means the list renders instantly on every
+// subsequent visit without waiting for the network.
+let conversationsCache: ConversationWithDetails[] = [];
+let cachedUserId: string | null = null;
+let hasInitialized = false; // module-level so it survives remounts
+
 export default function ConversationsScreen() {
-  const [conversations, setConversations] = useState<ConversationWithDetails[]>(
-    [],
+  // Seed state from cache so the first paint is instant on revisits.
+  const [conversations, setConversations] =
+    useState<ConversationWithDetails[]>(conversationsCache);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(
+    cachedUserId,
   );
-  const [loading, setLoading] = useState(true);
+  // Only show the skeleton when there is truly nothing to display yet.
+  const [loading, setLoading] = useState(conversationsCache.length === 0);
   const [refreshing, setRefreshing] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const hasLoadedRef = useRef(false);
   const { createScrollHandler } = useScrollDirection();
   const scrollHandler = useRef(createScrollHandler()).current;
-  // At the top of each screen component
-
-  // Prevents multiple overlapping silent re-fetches when several realtime
-  // events fire in quick succession (e.g. message INSERT + conversation UPDATE).
   const fetchInFlightRef = useRef(false);
 
   const loadConversations = useCallback(async (silent = false) => {
-    // Drop overlapping silent fetches — the in-flight one will return fresh data.
     if (silent && fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
     try {
-      if (!silent) setLoading(true);
+      // Never block the UI if we already have cached data.
+      if (!silent && conversationsCache.length === 0) setLoading(true);
       const data = await fetchConversations();
+      conversationsCache = data; // update module-level cache
       setConversations(data);
     } catch (err) {
       console.error("Error loading conversations:", err);
@@ -59,38 +64,47 @@ export default function ConversationsScreen() {
   }, []);
 
   useEffect(() => {
-    if (hasLoadedRef.current) return;
-    hasLoadedRef.current = true;
-
     let unsubscribe: (() => void) | undefined;
 
     const init = async () => {
+      // Already initialized in a previous mount — just re-sync silently
+      // and re-attach the realtime subscription (it's torn down on unmount).
+      if (hasInitialized) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        unsubscribe = subscribeToConversations(user.id, () => {
+          loadConversations(true);
+        });
+        loadConversations(true); // background sync, no spinner
+        return;
+      }
+
+      hasInitialized = true;
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return;
+      cachedUserId = user.id;
       setCurrentUserId(user.id);
 
-      // Subscribe BEFORE the initial load so no event is missed during the
-      // async fetch window.
       unsubscribe = subscribeToConversations(user.id, () => {
         loadConversations(true);
       });
 
-      // Initial load after subscription is live.
-      await loadConversations();
+      await loadConversations(); // first ever load — may show skeleton
     };
 
     init();
     return () => unsubscribe?.();
   }, [loadConversations]);
 
-  // Refresh conversations when screen comes into focus (e.g., returning from chat).
+  // Background sync whenever the screen regains focus (e.g. returning from chat).
+  // Always silent — list stays visible and just patches quietly.
   useFocusEffect(
     useCallback(() => {
-      if (hasLoadedRef.current) {
-        loadConversations(true);
-      }
+      if (hasInitialized) loadConversations(true);
     }, [loadConversations]),
   );
 
@@ -115,7 +129,9 @@ export default function ConversationsScreen() {
 
     return (
       <TouchableOpacity
-        onPress={() => router.push(`/chat/${item.id}`)}
+        onPress={() =>
+          router.push(`/chat/${item.id}?currentUserId=${currentUserId}`)
+        }
         style={[styles.row, hasUnread && styles.rowUnread]}
         activeOpacity={0.7}
       >

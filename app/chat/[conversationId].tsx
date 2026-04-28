@@ -1,12 +1,7 @@
 // app/chat/[conversationId].tsx
-// FIXES: Issues 12, 13, 14
-// - Messages from other users appear immediately (Issue 12)
-// - Chat header shows service provider name instead of generic "Chat" (Issue 13)
-// - Image double-send fixed with better deduplication (Issue 14)
-
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -46,26 +41,35 @@ type ConversationDetails = {
   service_id: string;
   buyer_id: string;
   seller_id: string;
-  service?: {
-    title: string;
-  };
-  buyer?: {
-    first_name: string;
-    last_name: string | null;
-  };
-  seller?: {
-    first_name: string;
-    last_name: string | null;
-  };
+  service?: { title: string };
+  buyer?: { first_name: string; last_name: string | null };
+  seller?: { first_name: string; last_name: string | null };
 };
 
+// Module-level cache keyed by conversationId — survives navigation.
+const messagesCacheMap = new Map<string, LocalMessage[]>();
+const detailsCacheMap = new Map<string, ConversationDetails>();
+
 export default function ChatScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
-  const currentUserId = useCurrentUserId();
-  const [messages, setMessages] = useState<LocalMessage[]>([]);
+  const { conversationId, currentUserId: userIdParam } = useLocalSearchParams<{
+    conversationId: string;
+    currentUserId: string;
+  }>();
+
+  // Use the param passed from ConversationsScreen for instant availability.
+  // Fall back to the hook for direct/deep-link navigation.
+  const hookUserId = useCurrentUserId();
+  const currentUserId = userIdParam || hookUserId;
+
+  const cachedMessages = messagesCacheMap.get(conversationId) ?? [];
+  const cachedDetails = detailsCacheMap.get(conversationId) ?? null;
+
+  // Seed state from cache — instant render on revisit.
+  const [messages, setMessages] = useState<LocalMessage[]>(cachedMessages);
   const [conversationDetails, setConversationDetails] =
-    useState<ConversationDetails | null>(null);
-  const [loading, setLoading] = useState(true);
+    useState<ConversationDetails | null>(cachedDetails);
+  // Only show spinner when there's genuinely nothing cached to show.
+  const [loading, setLoading] = useState(cachedMessages.length === 0);
   const [messageText, setMessageText] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const flatListRef = useRef<FlatList>(null);
@@ -75,7 +79,6 @@ export default function ChatScreen() {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 80);
   };
 
-  // Fetch conversation details including provider name
   const loadConversationDetails = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -95,7 +98,9 @@ export default function ChatScreen() {
         .single();
 
       if (error) throw error;
-      setConversationDetails(data as unknown as ConversationDetails);
+      const details = data as unknown as ConversationDetails;
+      detailsCacheMap.set(conversationId, details);
+      setConversationDetails(details);
     } catch (err) {
       console.error("Error loading conversation details:", err);
     }
@@ -104,8 +109,17 @@ export default function ChatScreen() {
   const loadMessages = useCallback(async () => {
     try {
       const data = await fetchMessages(conversationId);
-      setMessages(data.map((m) => ({ ...m, _status: "sent" })));
-      scrollToBottom(false);
+      const fresh = data.map((m) => ({ ...m, _status: "sent" as const }));
+
+      // Only update if something actually changed — avoids unnecessary re-renders.
+      const cached = messagesCacheMap.get(conversationId);
+      const lastCachedId = cached?.[cached.length - 1]?.id;
+      const lastFreshId = fresh[fresh.length - 1]?.id;
+      if (fresh.length !== cached?.length || lastFreshId !== lastCachedId) {
+        messagesCacheMap.set(conversationId, fresh);
+        setMessages(fresh);
+        scrollToBottom(false);
+      }
     } catch (err) {
       console.error("Error loading messages:", err);
     } finally {
@@ -121,36 +135,25 @@ export default function ChatScreen() {
     }
   }, [conversationId]);
 
-  // Mark messages as read whenever screen is focused (covers back-navigation too)
-  useFocusEffect(
-    useCallback(() => {
-      markAsRead();
-    }, [markAsRead]),
-  );
-
   useEffect(() => {
+    // If we have cached messages, scroll to bottom immediately.
+    if (cachedMessages.length > 0) scrollToBottom(false);
+
+    // Always kick off a background sync + detail fetch.
     loadConversationDetails();
     loadMessages();
     markAsRead();
 
-    // FIX Issue 12 & 14: Improved subscription with better deduplication
     const unsubscribe = subscribeToMessages(conversationId, (newMessage) => {
       setMessages((prev) => {
-        // Check if message already exists by ID
         const existsByServerId = prev.some((m) => m.id === newMessage.id);
-        if (existsByServerId) {
-          return prev;
-        }
+        if (existsByServerId) return prev;
 
-        // FIX Issue 14: Better matching for optimistic updates
-        // Find local message that matches this server message
         const localIdx = prev.findIndex(
           (m) =>
             m._status === "sending" &&
             m.sender_id === newMessage.sender_id &&
-            // For text messages, match by content
             ((!isImageMessage(m.content) && m.content === newMessage.content) ||
-              // For images, match by similar timestamps (within 5 seconds)
               (isImageMessage(m.content) &&
                 Math.abs(
                   new Date(m.created_at).getTime() -
@@ -158,25 +161,25 @@ export default function ChatScreen() {
                 ) < 5000)),
         );
 
+        let next: LocalMessage[];
         if (localIdx !== -1) {
-          // Replace optimistic message with server message
-          const updated = [...prev];
-          updated[localIdx] = { ...newMessage, _status: "sent" };
-          return updated;
+          next = [...prev];
+          next[localIdx] = { ...newMessage, _status: "sent" };
+        } else {
+          next = [...prev, { ...newMessage, _status: "sent" }];
         }
 
-        // FIX Issue 12: New message from other user - add immediately
-        return [...prev, { ...newMessage, _status: "sent" }];
+        // Keep cache in sync with realtime updates too.
+        messagesCacheMap.set(conversationId, next);
+        return next;
       });
 
-      // Only mark as read if message is from other user
-      if (newMessage.sender_id !== currentUserId) {
-        markAsRead();
-      }
+      if (newMessage.sender_id !== currentUserId) markAsRead();
       scrollToBottom();
     });
 
     return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     conversationId,
     loadConversationDetails,
@@ -202,7 +205,11 @@ export default function ChatScreen() {
       _status: "sending",
     };
 
-    setMessages((prev) => [...prev, optimistic]);
+    setMessages((prev) => {
+      const next = [...prev, optimistic];
+      messagesCacheMap.set(conversationId, next);
+      return next;
+    });
     scrollToBottom();
 
     try {
@@ -239,7 +246,11 @@ export default function ChatScreen() {
       _status: "sending",
     };
 
-    setMessages((prev) => [...prev, optimistic]);
+    setMessages((prev) => {
+      const next = [...prev, optimistic];
+      messagesCacheMap.set(conversationId, next);
+      return next;
+    });
     scrollToBottom();
     setUploadingImage(true);
 
@@ -253,7 +264,6 @@ export default function ChatScreen() {
       const content = `${IMAGE_MESSAGE_PREFIX}${publicUrl}`;
       await sendMessage({ conversation_id: conversationId, content });
 
-      // Update local message with final URL
       setMessages((prev) =>
         prev.map((m) =>
           m._localId === localId ? { ...m, content, _status: "sent" } : m,
@@ -369,19 +379,15 @@ export default function ChatScreen() {
     );
   };
 
-  // FIX Issue 13: Display provider name in header
   const getHeaderTitle = () => {
     if (!conversationDetails) return "Chat";
-
     const otherUser =
       conversationDetails.seller_id === currentUserId
         ? conversationDetails.buyer
         : conversationDetails.seller;
-
     if (otherUser?.first_name) {
       return `${otherUser.first_name} ${otherUser.last_name || ""}`.trim();
     }
-
     return conversationDetails.service?.title || "Chat";
   };
 
@@ -395,7 +401,6 @@ export default function ChatScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Header with provider name */}
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={COLORS.slate900} />
@@ -411,7 +416,6 @@ export default function ChatScreen() {
         <View style={styles.headerRight} />
       </View>
 
-      {/* Messages */}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -421,7 +425,6 @@ export default function ChatScreen() {
         onContentSizeChange={() => scrollToBottom(false)}
       />
 
-      {/* Input */}
       <KeyboardAvoidingView behavior="padding">
         <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
           <TouchableOpacity
@@ -486,89 +489,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
-  backBtn: {
-    padding: 4,
-  },
-  headerCenter: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  headerRight: {
-    width: 32,
-  },
-  messagesList: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  msgRow: {
-    marginBottom: 4,
-  },
-  msgRowOwn: {
-    alignItems: "flex-end",
-  },
-  msgRowOther: {
-    alignItems: "flex-start",
-  },
-  msgFirstInGroup: {
-    marginTop: 12,
-  },
-  bubbleWrap: {
-    maxWidth: "75%",
-  },
-  bubbleWrapOwn: {
-    alignItems: "flex-end",
-  },
-  bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-  },
-  bubbleOwn: {
-    backgroundColor: "#3b82f6",
-    borderBottomRightRadius: 4,
-  },
-  bubbleOther: {
-    backgroundColor: "#fff",
-    borderBottomLeftRadius: 4,
-  },
-  bubbleFailed: {
-    opacity: 0.6,
-    borderWidth: 1,
-    borderColor: "#ef4444",
-  },
-  bubbleText: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: "#0f172a",
-  },
-  bubbleTextOwn: {
-    color: "#fff",
-  },
-  imageBubble: {
-    borderRadius: 12,
-    overflow: "hidden",
-    position: "relative",
-  },
-  imageBubbleOwn: {
-    borderBottomRightRadius: 4,
-  },
-  imageBubbleOther: {
-    borderBottomLeftRadius: 4,
-  },
-  chatImage: {
-    width: 200,
-    height: 200,
-  },
+  backBtn: { padding: 4 },
+  headerCenter: { flex: 1, marginLeft: 12 },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
+  headerSubtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
+  headerRight: { width: 32 },
+  messagesList: { paddingHorizontal: 16, paddingVertical: 12 },
+  msgRow: { marginBottom: 4 },
+  msgRowOwn: { alignItems: "flex-end" },
+  msgRowOther: { alignItems: "flex-start" },
+  msgFirstInGroup: { marginTop: 12 },
+  bubbleWrap: { maxWidth: "75%" },
+  bubbleWrapOwn: { alignItems: "flex-end" },
+  bubble: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
+  bubbleOwn: { backgroundColor: "#3b82f6", borderBottomRightRadius: 4 },
+  bubbleOther: { backgroundColor: "#fff", borderBottomLeftRadius: 4 },
+  bubbleFailed: { opacity: 0.6, borderWidth: 1, borderColor: "#ef4444" },
+  bubbleText: { fontSize: 15, lineHeight: 20, color: "#0f172a" },
+  bubbleTextOwn: { color: "#fff" },
+  imageBubble: { borderRadius: 12, overflow: "hidden", position: "relative" },
+  imageBubbleOwn: { borderBottomRightRadius: 4 },
+  imageBubbleOther: { borderBottomLeftRadius: 4 },
+  chatImage: { width: 200, height: 200 },
   imageLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.3)",
@@ -581,26 +523,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     gap: 6,
   },
-  statusRowOwn: {
-    justifyContent: "flex-end",
-  },
-  timeText: {
-    fontSize: 11,
-    color: "#94a3b8",
-  },
-  statusIcon: {
-    marginLeft: 4,
-  },
-  retryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  retryText: {
-    fontSize: 11,
-    color: "#ef4444",
-    fontWeight: "600",
-  },
+  statusRowOwn: { justifyContent: "flex-end" },
+  timeText: { fontSize: 11, color: "#94a3b8" },
+  statusIcon: { marginLeft: 4 },
+  retryBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  retryText: { fontSize: 11, color: "#ef4444", fontWeight: "600" },
   inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -611,9 +538,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#e2e8f0",
     gap: 8,
   },
-  attachBtn: {
-    padding: 8,
-  },
+  attachBtn: { padding: 8 },
   input: {
     flex: 1,
     backgroundColor: "#f8fafc",
@@ -632,7 +557,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  sendBtnDisabled: {
-    backgroundColor: "#e2e8f0",
-  },
+  sendBtnDisabled: { backgroundColor: "#e2e8f0" },
 });
