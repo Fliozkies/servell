@@ -1,12 +1,12 @@
-import { router, useFocusEffect } from "expo-router";
+import { AntDesign } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { View } from "react-native";
+import { TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/api/supabase";
 import BottomNav from "../../lib/components/BottomNav";
-import ServicesHeader, {
-  CategoryPill,
-} from "../../lib/components/ServicesHeader";
+import ServicesHeader from "../../lib/components/ServicesHeader";
+import { COLORS } from "../../lib/constants/theme";
 import { useUnreadCounts } from "../../lib/hooks/useUnreadCounts";
 import { PageName } from "../../lib/types/custom.types";
 import { FilterOptions, UserLocation } from "../../lib/types/filter.types";
@@ -36,14 +36,12 @@ const DEFAULT_FILTERS: FilterOptions = {
  */
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<PageName>("Services");
+  const [previousTab, setPreviousTab] = useState<PageName>("Services");
 
   // Search / filter state (Services tab)
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
-
-  // Category pills — populated when ServicesScreen loads categories
-  const [categories, setCategories] = useState<CategoryPill[]>([]);
 
   // Profile location fallback — loaded once on mount from the user's profile.
   // Used as userLocation when GPS is not granted and "nearest" sort is active.
@@ -136,42 +134,23 @@ export default function MainScreen() {
           break;
       }
     } else {
+      setPreviousTab(activeTab);
       setActiveTab(tab);
     }
   };
 
-  const handleCategoryPress = (id: string | null) => {
-    if (id === null) {
-      // "All" — just clear the category filter, stay on home
-      setFilters((prev) => ({ ...prev, categoryId: id }));
-      return;
-    }
-    // Any specific category — push to list screen
-    const categoryName =
-      categories.find((c) => c.id === id)?.name ?? "Services";
-    router.push({
-      pathname: "/services-list",
-      params: { title: categoryName, categoryId: id },
-    });
-  };
-
-  // ServicesHeader rendered as a scrollable element (not sticky)
-  const servicesHeader = (
-    <ServicesHeader
-      searchQuery={searchQuery}
-      onSearchChange={setSearchQuery}
-      onFilterPress={() => setFilterModalVisible(true)}
-      onNotificationPress={() => setActiveTab("Notification")}
-      hasActiveFilters={!!hasActiveFilters}
-      unreadNotifications={counts.notifications}
-      categories={categories}
-      activeCategoryId={filters.categoryId}
-      onCategoryPress={handleCategoryPress}
-    />
-  );
-
   return (
     <SafeAreaView className="bg-white flex-1" edges={["top", "left", "right"]}>
+      {activeTab === "Services" && (
+        <ServicesHeader
+          onNotificationPress={() => {
+            setPreviousTab(activeTab);
+            setActiveTab("Notification");
+          }}
+          unreadNotifications={counts.notifications}
+        />
+      )}
+
       <View className="flex-1">
         <View
           style={{
@@ -186,10 +165,76 @@ export default function MainScreen() {
             onFilterModalClose={() => setFilterModalVisible(false)}
             filters={effectiveFilters}
             onFiltersChange={setFilters}
-            onCategoriesLoaded={setCategories}
             effectiveUserLocation={effectiveUserLocation}
-            // Pass header as a prop so it scrolls with the content
-            listHeader={servicesHeader}
+            listHeader={
+              <View className="px-4 pt-3 pb-4">
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: "#fff",
+                    borderWidth: 1,
+                    borderColor: COLORS.slate200,
+                    borderRadius: 16,
+                    paddingHorizontal: 12,
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 2,
+                    elevation: 1,
+                  }}
+                >
+                  <AntDesign name="search" size={18} color={COLORS.slate400} />
+                  <TextInput
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Search services..."
+                    placeholderTextColor={COLORS.slate400}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 12,
+                      paddingHorizontal: 8,
+                      fontSize: 15,
+                      color: "#0f172a",
+                    }}
+                    returnKeyType="search"
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery("")}>
+                      <AntDesign
+                        name="close-circle"
+                        size={16}
+                        color={COLORS.slate400}
+                      />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    onPress={() => setFilterModalVisible(true)}
+                    activeOpacity={0.8}
+                    style={{ marginLeft: 8 }}
+                  >
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 12,
+                        backgroundColor: !!hasActiveFilters
+                          ? COLORS.primary
+                          : COLORS.slate100,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <AntDesign
+                        name="filter"
+                        size={18}
+                        color={!!hasActiveFilters ? "#fff" : COLORS.slate500}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            }
           />
         </View>
 
@@ -217,6 +262,7 @@ export default function MainScreen() {
           <NotificationScreen
             key={notificationsRefreshKey}
             onAllRead={resetNotifications}
+            onBack={() => setActiveTab(previousTab)}
           />
         </View>
 

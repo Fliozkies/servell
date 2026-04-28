@@ -82,11 +82,8 @@ const BottomNav = memo(function BottomNav({
         backgroundColor: "#FFFFFF",
         borderRadius,
         paddingVertical: paddingV,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.35,
-        shadowRadius: 16,
-        elevation: 12,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
         transform: [{ translateY }],
       }}
     >
@@ -145,6 +142,7 @@ const NavButton = memo(function NavButton({
   icon,
   active,
   onPress,
+  name,
   badgeCount = 0,
   isPost = false,
 }: {
@@ -235,30 +233,35 @@ const NavButton = memo(function NavButton({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         activeOpacity={1}
+        style={{
+          alignItems: "center",
+          justifyContent: "center",
+          paddingVertical: 6,
+          paddingHorizontal: 16,
+        }}
       >
         <Animated.View
           style={{
-            width: 50,
-            height: 50,
-            borderRadius: 25,
-            backgroundColor: COLORS.primary ?? "#2563EB",
-            alignItems: "center",
-            justifyContent: "center",
             transform: [{ scale: postPressScale }],
-            shadowColor: COLORS.primary ?? "#2563EB",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.38,
-            shadowRadius: 8,
-            elevation: 6,
           }}
         >
           <Animated.View style={{ transform: [{ rotate }] }}>
             {React.cloneElement(icon, {
-              color: "#FFFFFF",
-              strokeWidth: 2.5,
+              color: active ? COLORS.primary : COLORS.slate400,
+              strokeWidth: active ? 2.5 : 2,
             })}
           </Animated.View>
         </Animated.View>
+        <Text
+          style={{
+            fontSize: 10,
+            fontWeight: active ? "700" : "500",
+            color: active ? COLORS.primary : COLORS.slate400,
+            marginTop: 3,
+          }}
+        >
+          {name}
+        </Text>
       </TouchableOpacity>
     );
   }
@@ -268,7 +271,12 @@ const NavButton = memo(function NavButton({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
-      className="items-center justify-center py-2.5 px-5"
+      style={{
+        alignItems: "center",
+        justifyContent: "center",
+        paddingVertical: 6,
+        paddingHorizontal: 16,
+      }}
     >
       {/* Animated pill highlight */}
       <Animated.View
@@ -311,6 +319,17 @@ const NavButton = memo(function NavButton({
           </View>
         ) : null}
       </View>
+
+      <Text
+        style={{
+          fontSize: 10,
+          fontWeight: active ? "700" : "500",
+          color: active ? COLORS.primary : COLORS.slate400,
+          marginTop: 3,
+        }}
+      >
+        {name}
+      </Text>
     </TouchableOpacity>
   );
 });

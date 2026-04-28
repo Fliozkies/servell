@@ -19,6 +19,7 @@ import {
 } from "../../types/database.types";
 import AddCommentModal from "../AddCommentModal";
 import CommentItem from "../CommentItem";
+import { CommentsTabSkeleton } from "../SkeletonLoader";
 
 type CommentsTabProps = {
   service: ServiceWithDetails;
@@ -260,12 +261,7 @@ export default function CommentsTab({
   };
 
   if (loading && !refreshing) {
-    return (
-      <View className="flex-1 items-center justify-center bg-slate-50">
-        <ActivityIndicator size="large" color="#1877F2" />
-        <Text className="mt-4 text-slate-600">Loading comments...</Text>
-      </View>
-    );
+    return <CommentsTabSkeleton />;
   }
 
   return (

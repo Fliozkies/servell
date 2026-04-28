@@ -52,6 +52,10 @@ import {
 import { supabase } from "../../lib/api/supabase";
 import { BoostServiceModal } from "../../lib/components/BoostServiceModal";
 import { ProfileImageModal } from "../../lib/components/ProfileImageModal";
+import {
+  ProfileScreenSkeleton,
+  SkeletonBox,
+} from "../../lib/components/SkeletonLoader";
 import { FormField } from "../../lib/components/ui/FormField";
 import { ProfileAvatar } from "../../lib/components/ui/ProfileAvatar";
 import { TabBar } from "../../lib/components/ui/TabBar";
@@ -92,6 +96,7 @@ async function handleLogout() {
 export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [subscriberCount, setSubscriberCount] = useState(0);
   const [services, setServices] = useState<Service[]>([]);
@@ -105,11 +110,11 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
   const [isActionSheetVisible, setIsActionSheetVisible] = useState(false);
+  const [isBoostModalVisible, setIsBoostModalVisible] = useState(false);
   const [isEditServiceVisible, setIsEditServiceVisible] = useState(false);
   const [serviceToEdit, setServiceToEdit] = useState<Service | null>(null);
   const [isProfileImageModalVisible, setIsProfileImageModalVisible] =
     useState(false);
-  const [isBoostModalVisible, setIsBoostModalVisible] = useState(false);
 
   const subscriptionsLoadedRef = useRef(false);
   const reviewsLoadedRef = useRef(false);
@@ -118,7 +123,6 @@ export default function ProfileScreen() {
 
   const { createScrollHandler } = useScrollDirection();
   const scrollHandler = useRef(createScrollHandler()).current;
-
   // ── Data loaders ───────────────────────────────────────────────────────────
 
   const loadProfile = useCallback(async () => {
@@ -134,6 +138,7 @@ export default function ProfileScreen() {
       .single();
     if (data) setProfile(data);
     setSubscriberCount(await getSubscriberCount(user.id));
+    setProfileLoading(false);
   }, []);
 
   const loadServices = useCallback(async () => {
@@ -376,6 +381,10 @@ export default function ProfileScreen() {
       : "—";
 
   // text-xl font-bold text-slate-900
+  if (profileLoading) {
+    return <ProfileScreenSkeleton />;
+  }
+
   return (
     <View className="flex-1 bg-white">
       <View className="flex-row justify-between items-center px-5 pb-2 border-b border-slate-100">
@@ -403,31 +412,27 @@ export default function ProfileScreen() {
       >
         {/* Profile header */}
         <View className="px-5 pt-6 pb-4">
-          <View className="flex-row items-center">
+          <View className="items-center">
             <TouchableOpacity
               onPress={() => setIsProfileImageModalVisible(true)}
               activeOpacity={0.7}
             >
-              <ProfileAvatar profile={profile} size={80} textSize={32} />
+              <ProfileAvatar profile={profile} size={96} textSize={36} />
             </TouchableOpacity>
-            <View className="ml-4 flex-1">
-              <View className="flex-row items-center flex-wrap">
-                <Text className="text-xl font-bold text-slate-900 mr-2">
+            <View className="mt-4 items-center">
+              <View className="flex-row items-center justify-center">
+                <Text className="text-2xl font-bold text-slate-900 mr-2">
                   {displayName}
                 </Text>
                 {profile?.physis_verified && (
-                  <BadgeCheck size={18} color={COLORS.primary} fill="#dbeafe" />
+                  <BadgeCheck size={20} color={COLORS.primary} fill="#dbeafe" />
                 )}
               </View>
-              <Text className="text-slate-400 text-sm mt-0.5">
-                Member since{" "}
-                {profile
-                  ? new Date(profile.created_at).toLocaleDateString("en-PH", {
-                      month: "long",
-                      year: "numeric",
-                    })
-                  : "—"}
-              </Text>
+              {profile?.bio ? (
+                <Text className="text-slate-500 text-center text-sm mt-2 px-4 leading-relaxed">
+                  {profile.bio}
+                </Text>
+              ) : null}
             </View>
           </View>
 
@@ -452,7 +457,26 @@ export default function ProfileScreen() {
           {activeTab === "posts" && (
             <>
               {loadingServices ? (
-                <LoadingSpinner />
+                <View style={{ gap: 12 }}>
+                  {[0, 1, 2].map((i) => (
+                    <View
+                      key={i}
+                      style={{
+                        backgroundColor: "#f8fafc",
+                        borderRadius: 14,
+                        borderWidth: 0.5,
+                        borderColor: "#e2e8f0",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <SkeletonBox height={110} borderRadius={0} />
+                      <View style={{ padding: 12, gap: 6 }}>
+                        <SkeletonBox height={14} width="70%" />
+                        <SkeletonBox height={12} width="40%" />
+                      </View>
+                    </View>
+                  ))}
+                </View>
               ) : services.length === 0 ? (
                 <ProfileEmptyState
                   icon={<List size={32} color={COLORS.slate400} />}
@@ -475,7 +499,25 @@ export default function ProfileScreen() {
           {activeTab === "subscriptions" && (
             <>
               {loadingSubscriptions ? (
-                <LoadingSpinner />
+                <View style={{ gap: 12 }}>
+                  {[0, 1, 2].map((i) => (
+                    <View
+                      key={i}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 12,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <SkeletonBox width={44} height={44} borderRadius={22} />
+                      <View style={{ flex: 1, gap: 6 }}>
+                        <SkeletonBox height={13} width="60%" />
+                        <SkeletonBox height={11} width="40%" />
+                      </View>
+                    </View>
+                  ))}
+                </View>
               ) : subscriptions.length === 0 ? (
                 <ProfileEmptyState
                   icon={<Users size={32} color={COLORS.slate400} />}
@@ -497,7 +539,32 @@ export default function ProfileScreen() {
           {activeTab === "reviews" && (
             <>
               {loadingReviews ? (
-                <LoadingSpinner />
+                <View style={{ gap: 12 }}>
+                  {[0, 1, 2].map((i) => (
+                    <View
+                      key={i}
+                      style={{
+                        gap: 6,
+                        paddingVertical: 10,
+                        borderBottomWidth: 1,
+                        borderBottomColor: "#f1f5f9",
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <SkeletonBox width={36} height={36} borderRadius={18} />
+                        <SkeletonBox height={13} width="40%" />
+                      </View>
+                      <SkeletonBox height={12} width="90%" />
+                      <SkeletonBox height={12} width="65%" />
+                    </View>
+                  ))}
+                </View>
               ) : reviews.length === 0 ? (
                 <ProfileEmptyState
                   icon={<Star size={32} color={COLORS.slate400} />}
@@ -571,20 +638,6 @@ export default function ProfileScreen() {
                 }}
               />
               <MenuOption
-                icon={<Zap size={20} color="#7c3aed" />}
-                label={
-                  serviceToEdit?.boosted_until &&
-                  new Date(serviceToEdit.boosted_until) > new Date()
-                    ? "Manage Boost"
-                    : "Boost Service"
-                }
-                onPress={() => {
-                  closeActionSheet(() =>
-                    setTimeout(() => setIsBoostModalVisible(true), 300),
-                  );
-                }}
-              />
-              <MenuOption
                 icon={
                   serviceToEdit?.status === "active" ? (
                     <AlertCircle size={20} color="#f97316" />
@@ -607,6 +660,20 @@ export default function ProfileScreen() {
                 }}
               />
               <MenuOption
+                icon={<Zap size={20} color="#7c3aed" />}
+                label={
+                  serviceToEdit?.boosted_until &&
+                  new Date(serviceToEdit.boosted_until) > new Date()
+                    ? "Manage Boost"
+                    : "Boost Service"
+                }
+                onPress={() => {
+                  closeActionSheet(() =>
+                    setTimeout(() => setIsBoostModalVisible(true), 300),
+                  );
+                }}
+              />
+              <MenuOption
                 icon={<Trash2 size={20} color={COLORS.danger} />}
                 label="Delete Service"
                 destructive
@@ -625,7 +692,6 @@ export default function ProfileScreen() {
 
       {serviceToEdit && (
         <EditServiceModal
-          key={serviceToEdit.id}
           visible={isEditServiceVisible}
           service={serviceToEdit}
           onClose={() => setIsEditServiceVisible(false)}
@@ -637,17 +703,6 @@ export default function ProfileScreen() {
           }}
         />
       )}
-
-      <BoostServiceModal
-        visible={isBoostModalVisible}
-        service={serviceToEdit}
-        onClose={() => setIsBoostModalVisible(false)}
-        onBoosted={(updated) => {
-          setServices((prev) =>
-            prev.map((s) => (s.id === updated.id ? updated : s)),
-          );
-        }}
-      />
 
       <SettingsModal
         visible={isSettingsVisible}
@@ -662,17 +717,22 @@ export default function ProfileScreen() {
         profile={profile}
         onImageUpdate={handleUpdateProfileImage}
       />
+
+      <BoostServiceModal
+        visible={isBoostModalVisible}
+        service={serviceToEdit}
+        onClose={() => setIsBoostModalVisible(false)}
+        onBoosted={(updated) => {
+          setServices((prev) =>
+            prev.map((s) => (s.id === updated.id ? updated : s)),
+          );
+        }}
+      />
     </View>
   );
 }
 
 // ── Shared Primitives ─────────────────────────────────────────────────────────
-
-const LoadingSpinner = () => (
-  <View className="py-16 items-center">
-    <ActivityIndicator color={COLORS.primary} />
-  </View>
-);
 
 const StatPill = ({
   label,
@@ -755,47 +815,6 @@ const ServiceCard = ({
               {service.status}
             </Text>
           </View>
-          {service.boosted_until &&
-            new Date(service.boosted_until) > new Date() && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  backgroundColor:
-                    service.boost_tier === "premium" ? "#f5f3ff" : "#EEF4FF",
-                  borderRadius: 20,
-                  paddingHorizontal: 6,
-                  paddingVertical: 2,
-                  gap: 3,
-                }}
-              >
-                <Zap
-                  size={9}
-                  color={
-                    service.boost_tier === "premium"
-                      ? "#7c3aed"
-                      : COLORS.primary
-                  }
-                  fill={
-                    service.boost_tier === "premium"
-                      ? "#7c3aed"
-                      : COLORS.primary
-                  }
-                />
-                <Text
-                  style={{
-                    fontSize: 9,
-                    fontWeight: "700",
-                    color:
-                      service.boost_tier === "premium"
-                        ? "#7c3aed"
-                        : COLORS.primary,
-                  }}
-                >
-                  {service.boost_tier === "premium" ? "PREMIUM" : "BOOSTED"}
-                </Text>
-              </View>
-            )}
         </View>
         <Text
           className="text-base font-semibold text-slate-900"
@@ -1130,6 +1149,7 @@ const SettingsModal = ({
   const [section, setSection] = useState<SettingsSection>("main");
   const [firstName, setFirstName] = useState(profile?.first_name ?? "");
   const [lastName, setLastName] = useState(profile?.last_name ?? "");
+  const [bio, setBio] = useState(profile?.bio ?? "");
   const [saving, setSaving] = useState(false);
 
   // Notification preferences state
@@ -1200,6 +1220,7 @@ const SettingsModal = ({
     setSection("main");
     setFirstName(profile?.first_name ?? "");
     setLastName(profile?.last_name ?? "");
+    setBio(profile?.bio ?? "");
   }, [visible, profile]);
 
   const saveProfile = async () => {
@@ -1208,7 +1229,11 @@ const SettingsModal = ({
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .update({ first_name: firstName.trim(), last_name: lastName.trim() })
+        .update({
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          bio: bio.trim() || null,
+        })
         .eq("id", profile.id)
         .select()
         .single();
@@ -1216,8 +1241,13 @@ const SettingsModal = ({
       onProfileUpdated(data);
       Alert.alert("Saved", "Your profile has been updated.");
       setSection("main");
-    } catch {
-      Alert.alert("Error", "Could not save profile. Please try again.");
+    } catch (err: any) {
+      console.error("Profile update error:", err);
+      Alert.alert(
+        "Database Error",
+        err?.message ||
+          "Could not save profile. Please make sure the 'bio' column exists in your Supabase 'profiles' table.",
+      );
     } finally {
       setSaving(false);
     }
@@ -1349,6 +1379,19 @@ const SettingsModal = ({
                   placeholder="Last name"
                   className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
                   placeholderTextColor={COLORS.slate400}
+                />
+              </FormField>
+              <FormField label="Bio (Optional)">
+                <TextInput
+                  value={bio}
+                  onChangeText={setBio}
+                  placeholder="Tell us about yourself"
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  className="border border-slate-300 rounded-xl px-4 py-3 text-slate-900"
+                  placeholderTextColor={COLORS.slate400}
+                  style={{ minHeight: 100 }}
                 />
               </FormField>
             </View>

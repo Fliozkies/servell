@@ -24,6 +24,7 @@ import {
 } from "../../types/database.types";
 import ReviewFilterBottomSheet from "../ReviewFilterBottomSheet";
 import ReviewItem from "../ReviewItem";
+import { ReviewsTabSkeleton } from "../SkeletonLoader";
 import WriteReviewModal from "../WriteReviewModal";
 
 type ReviewsTabProps = {
@@ -361,12 +362,7 @@ export default function ReviewsTab({
   };
 
   if (loading && !refreshing) {
-    return (
-      <View className="flex-1 items-center justify-center bg-slate-50">
-        <ActivityIndicator size="large" color="#1877F2" />
-        <Text className="mt-4 text-slate-600">Loading reviews...</Text>
-      </View>
-    );
+    return <ReviewsTabSkeleton />;
   }
 
   return (

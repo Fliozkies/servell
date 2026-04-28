@@ -2,6 +2,7 @@
 // Previously: app/juarez_app/pages/notification.tsx
 import { useRouter } from "expo-router";
 import {
+  ArrowLeft,
   Bell,
   CheckCheck,
   ChevronRight,
@@ -18,7 +19,6 @@ import {
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   RefreshControl,
   ScrollView,
@@ -35,8 +35,8 @@ import {
   subscribeToNotifications,
 } from "../../lib/api/notifications.api";
 import { supabase } from "../../lib/api/supabase";
+import { NotificationScreenSkeleton } from "../../lib/components/SkeletonLoader";
 import { COLORS } from "../../lib/constants/theme";
-import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { Notification, NotificationType } from "../../lib/types/database.types";
 import { formatRelativeTime, isToday } from "../../lib/utils/date";
 
@@ -105,8 +105,10 @@ function getNotifAccent(type: NotificationType): string {
 
 export default function NotificationScreen({
   onAllRead,
+  onBack,
 }: {
   onAllRead?: () => void;
+  onBack?: () => void;
 }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -373,8 +375,8 @@ export default function NotificationScreen({
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 bg-white items-center justify-center">
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <SafeAreaView className="flex-1 bg-white">
+        <NotificationScreenSkeleton />
       </SafeAreaView>
     );
   }
@@ -382,15 +384,29 @@ export default function NotificationScreen({
   return (
     <View className="flex-1 bg-white">
       <View className="flex-row justify-between items-center px-5 pb-2 bg-white border-b border-slate-100">
-        <View>
-          <Text className="text-3xl font-bold text-slate-900">
-            Notifications
-          </Text>
-          {unreadCount > 0 && (
-            <Text className="text-xs text-slate-400 mt-0.5">
-              {unreadCount} unread
+        <View className="flex-row items-center">
+          <TouchableOpacity
+            onPress={() => {
+              if (onBack) {
+                onBack();
+              } else if (router.canGoBack()) {
+                router.back();
+              }
+            }}
+            className="mr-3 p-2 -ml-2 rounded-full bg-slate-50"
+          >
+            <ArrowLeft size={24} color={COLORS.slate700} />
+          </TouchableOpacity>
+          <View>
+            <Text className="text-3xl font-bold text-slate-900">
+              Notifications
             </Text>
-          )}
+            {unreadCount > 0 && (
+              <Text className="text-xs text-slate-400 mt-0.5">
+                {unreadCount} unread
+              </Text>
+            )}
+          </View>
         </View>
         {unreadCount > 0 && (
           <TouchableOpacity

@@ -2,11 +2,14 @@
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+// import { LinearGradient } from "expo-linear-gradient";
+import { ArrowUp } from "lucide-react-native";
 import {
-  ActivityIndicator,
+  Animated,
   Dimensions,
   FlatList,
   Image,
+  ImageBackground,
   RefreshControl,
   ScrollView,
   Text,
@@ -15,19 +18,18 @@ import {
 } from "react-native";
 import {
   fetchBoostedServices,
-  fetchCategories,
   fetchEditorsPick,
   searchAndFilterServices,
 } from "../../lib/api/services.api";
 import AdBanner from "../../lib/components/AdBanner";
 import { BoostServiceModal } from "../../lib/components/BoostServiceModal";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
-import { CategoryPill } from "../../lib/components/ServicesHeader";
+import { ServicesScreenSkeleton } from "../../lib/components/SkeletonLoader";
 import { COLORS } from "../../lib/constants/theme";
 import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
 import { useDebounce } from "../../lib/hooks/useDebounce";
-import { Category, ServiceWithDetails } from "../../lib/types/database.types";
+import { ServiceWithDetails } from "../../lib/types/database.types";
 import { FilterOptions } from "../../lib/types/filter.types";
 import { formatPrice } from "../../lib/utils/format";
 
@@ -45,131 +47,203 @@ function formatAuthor(service: ServiceWithDetails): string {
 
 // ── Featured Card ─────────────────────────────────────────────────────────────
 
-const FeaturedCard = ({
+// Shared content block used inside both the image and fallback card variants
+const FeaturedCardContent = ({
   service,
   isBoosted,
 }: {
   service: ServiceWithDetails;
   isBoosted: boolean;
 }) => (
-  <TouchableOpacity
-    onPress={() => router.push(`/service/${service.id}`)}
-    activeOpacity={0.88}
-    style={{
-      backgroundColor: isBoosted ? COLORS.primary : "#78350f",
-      borderRadius: 16,
-      padding: 16,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-    }}
-  >
-    {/* Thumbnail */}
-    {service.image_url ? (
-      <Image
-        source={{ uri: service.image_url }}
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: 12,
-          flexShrink: 0,
-        }}
-      />
-    ) : (
-      <View
-        style={{
-          width: 72,
-          height: 72,
-          borderRadius: 12,
-          backgroundColor: "rgba(255,255,255,0.15)",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        <AntDesign name="picture" size={28} color="rgba(255,255,255,0.5)" />
-      </View>
-    )}
-
-    {/* Content */}
-    <View style={{ flex: 1, minWidth: 0 }}>
-      {/* Badge — ⚡ FEATURED for paid boost, ⭐ TOP PICK for editor's pick */}
-      <View
-        style={{
-          backgroundColor: "rgba(255,255,255,0.2)",
-          alignSelf: "flex-start",
-          paddingHorizontal: 8,
-          paddingVertical: 3,
-          borderRadius: 20,
-          marginBottom: 6,
-        }}
-      >
-        <Text
-          style={{
-            color: "#fff",
-            fontSize: 9,
-            fontWeight: "700",
-            letterSpacing: 0.5,
-          }}
-        >
-          {isBoosted ? "⚡ FEATURED" : "⭐ TOP PICK"}
-        </Text>
-      </View>
-
+  <View style={{ gap: 6 }}>
+    {/* Badge */}
+    <View
+      style={{
+        backgroundColor: isBoosted
+          ? "rgba(37,99,235,0.85)"
+          : "rgba(255,255,255,0.18)",
+        alignSelf: "flex-start",
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: "rgba(255,255,255,0.3)",
+      }}
+    >
       <Text
         style={{
-          fontSize: 15,
-          fontWeight: "700",
           color: "#fff",
-          marginBottom: 2,
+          fontSize: 10,
+          fontWeight: "700",
+          letterSpacing: 0.8,
         }}
-        numberOfLines={1}
       >
-        {service.title}
+        {isBoosted ? "⚡ FEATURED" : "⭐ TOP PICK"}
       </Text>
+    </View>
+
+    {/* Title */}
+    <Text
+      style={{
+        fontSize: 20,
+        fontWeight: "800",
+        color: "#fff",
+        lineHeight: 24,
+        textShadowColor: "rgba(0,0,0,0.6)",
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+      }}
+      numberOfLines={2}
+    >
+      {service.title}
+    </Text>
+
+    {/* Author · Location */}
+    <Text
+      style={{
+        fontSize: 12,
+        color: "rgba(255,255,255,0.8)",
+        textShadowColor: "rgba(0,0,0,0.5)",
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+      }}
+      numberOfLines={1}
+    >
+      by {formatAuthor(service)}
+      {service.location ? ` · ${service.location}` : ""}
+    </Text>
+
+    {/* Price + Rating row */}
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginTop: 2,
+      }}
+    >
       <Text
         style={{
-          fontSize: 11,
-          color: "rgba(255,255,255,0.75)",
-          marginBottom: 6,
+          fontSize: 22,
+          fontWeight: "800",
+          color: "#fff",
+          textShadowColor: "rgba(0,0,0,0.5)",
+          textShadowOffset: { width: 0, height: 1 },
+          textShadowRadius: 4,
         }}
-        numberOfLines={1}
       >
-        by {formatAuthor(service)}
-        {service.location ? ` · ${service.location}` : ""}
+        {formatPrice(service.price)}
       </Text>
-
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
+          gap: 4,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+          borderRadius: 20,
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,0.2)",
         }}
       >
-        <Text style={{ fontSize: 16, fontWeight: "800", color: "#fff" }}>
-          {formatPrice(service.price)}
+        <Text style={{ color: "#fbbf24", fontSize: 12 }}>★</Text>
+        <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+          {service.rating.toFixed(1)}
+          {service.review_count > 0 ? ` (${service.review_count})` : ""}
         </Text>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 3,
-            backgroundColor: "rgba(255,255,255,0.2)",
-            paddingHorizontal: 8,
-            paddingVertical: 3,
-            borderRadius: 20,
-          }}
-        >
-          <Text style={{ color: "#fbbf24", fontSize: 10 }}>★</Text>
-          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "600" }}>
-            {service.rating.toFixed(1)}
-            {service.review_count > 0 ? ` (${service.review_count})` : ""}
-          </Text>
-        </View>
       </View>
     </View>
-  </TouchableOpacity>
+  </View>
 );
+
+const FeaturedCard = ({
+  service,
+  isBoosted,
+}: {
+  service: ServiceWithDetails;
+  isBoosted: boolean;
+}) => {
+  const accentColor = isBoosted ? COLORS.primary : "#78350f";
+
+  return (
+    <TouchableOpacity
+      onPress={() => router.push(`/service/${service.id}`)}
+      activeOpacity={0.88}
+      style={{
+        borderRadius: 20,
+        overflow: "hidden",
+        height: 220,
+        // Subtle shadow for depth
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 8,
+      }}
+    >
+      {service.image_url ? (
+        /* ── Image variant: service photo as full background ── */
+        <ImageBackground
+          source={{ uri: service.image_url }}
+          style={{ flex: 1 }}
+          resizeMode="cover"
+        >
+          {/* Temporary fallback for LinearGradient due to missing native module */}
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "flex-end",
+              padding: 18,
+              backgroundColor: "rgba(0,0,0,0.45)",
+            }}
+          >
+            <FeaturedCardContent service={service} isBoosted={isBoosted} />
+          </View>
+        </ImageBackground>
+      ) : (
+        /* ── Fallback: solid accent colour with subtle noise texture ── */
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: accentColor,
+            justifyContent: "flex-end",
+            padding: 18,
+          }}
+        >
+          {/* Decorative circle for visual interest when no image */}
+          <View
+            style={{
+              position: "absolute",
+              top: -40,
+              right: -40,
+              width: 180,
+              height: 180,
+              borderRadius: 90,
+              backgroundColor: "rgba(255,255,255,0.07)",
+            }}
+          />
+          <View
+            style={{
+              position: "absolute",
+              top: 20,
+              right: 60,
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              backgroundColor: "rgba(255,255,255,0.05)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <AntDesign name="picture" size={32} color="rgba(255,255,255,0.3)" />
+          </View>
+          <FeaturedCardContent service={service} isBoosted={isBoosted} />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
 
 // ── Mini Card (horizontal scroll) ─────────────────────────────────────────────
 
@@ -520,11 +594,12 @@ type ServicesScreenProps = {
   onFilterModalClose: () => void;
   filters: FilterOptions;
   onFiltersChange: (filters: FilterOptions) => void;
-  onCategoriesLoaded?: (pills: CategoryPill[]) => void;
   /** Effective user location (GPS or profile fallback) — passed through for See all navigation */
   effectiveUserLocation?: import("../../lib/types/filter.types").UserLocation;
   /** Optional header element to render at the top of the scroll content (non-sticky) */
   listHeader?: ReactNode;
+  /** Callback fired when scroll reaches or leaves the top */
+  onAtTopChange?: (isAtTop: boolean) => void;
 };
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -535,9 +610,9 @@ export default function ServicesScreen({
   onFilterModalClose,
   filters,
   onFiltersChange,
-  onCategoriesLoaded,
   effectiveUserLocation,
   listHeader,
+  onAtTopChange,
 }: ServicesScreenProps) {
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [boostedServices, setBoostedServices] = useState<ServiceWithDetails[]>(
@@ -552,25 +627,106 @@ export default function ServicesScreen({
 
   const userId = useCurrentUserId();
 
-  const { createScrollHandler } = useScrollDirection();
-  const scrollHandler = useRef(createScrollHandler()).current;
+  const { createScrollHandler, direction, subscribe } = useScrollDirection();
+  const baseScrollHandler = useRef(createScrollHandler()).current;
+  const scrollRef = useRef<any>(null);
+  const scrollYRef = useRef(0);
+
+  const backToTopAnim = useRef(new Animated.Value(0)).current;
+
+  const scrollHandler = useCallback(
+    (e: any) => {
+      baseScrollHandler(e);
+      const currentY = e.nativeEvent.contentOffset.y;
+
+      if (scrollYRef.current <= 50 && currentY > 50) {
+        onAtTopChange?.(false);
+      } else if (scrollYRef.current > 50 && currentY <= 50) {
+        onAtTopChange?.(true);
+      }
+
+      scrollYRef.current = currentY;
+
+      const shouldShow = currentY > 300 && direction.current === "up";
+      Animated.timing(backToTopAnim, {
+        toValue: shouldShow ? 1 : 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    },
+    [baseScrollHandler, direction, backToTopAnim, onAtTopChange],
+  );
+
+  useEffect(() => {
+    return subscribe((dir) => {
+      const shouldShow = scrollYRef.current > 300 && dir === "up";
+      Animated.timing(backToTopAnim, {
+        toValue: shouldShow ? 1 : 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [subscribe, backToTopAnim]);
+
+  const scrollToTop = () => {
+    if (scrollYRef.current <= 300 || direction.current !== "up") return;
+    if (scrollRef.current) {
+      if (scrollRef.current.scrollTo) {
+        scrollRef.current.scrollTo({ y: 0, animated: true });
+      } else if (scrollRef.current.scrollToOffset) {
+        scrollRef.current.scrollToOffset({ offset: 0, animated: true });
+      }
+    }
+  };
+
+  const renderBackToTop = () => (
+    <Animated.View
+      style={{
+        position: "absolute",
+        bottom: 120, // Above the BottomNav
+        left: "50%",
+        marginLeft: -25, // Center horizontally based on width 50
+        zIndex: 50,
+        opacity: backToTopAnim,
+        transform: [
+          {
+            scale: backToTopAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.01, 1],
+            }),
+          },
+          {
+            translateY: backToTopAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [20, 0],
+            }),
+          },
+        ],
+      }}
+    >
+      <TouchableOpacity
+        onPress={scrollToTop}
+        activeOpacity={0.8}
+        style={{
+          width: 50,
+          height: 50,
+          borderRadius: 25,
+          backgroundColor: COLORS.primary,
+          justifyContent: "center",
+          alignItems: "center",
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 5,
+          elevation: 8,
+        }}
+      >
+        <ArrowUp size={24} color="#fff" strokeWidth={2.5} />
+      </TouchableOpacity>
+    </Animated.View>
+  );
 
   const debouncedSearch = useDebounce(searchQuery, 400);
-
-  // ── Load categories once ─────────────────────────────────────────────────
-  useEffect(() => {
-    fetchCategories()
-      .then((cats: Category[]) => {
-        const pills: CategoryPill[] = cats.map((c) => ({
-          id: c.id,
-          name: c.name,
-        }));
-        onCategoriesLoaded?.(pills);
-      })
-      .catch(() => {
-        // If categories fail, header keeps static pills — no-op
-      });
-  }, [onCategoriesLoaded]);
 
   // ── Load services ────────────────────────────────────────────────────────
   const loadServices = useCallback(async () => {
@@ -664,13 +820,7 @@ export default function ServicesScreen({
   // ── States ───────────────────────────────────────────────────────────────
 
   if (loading && !refreshing) {
-    return (
-      <View className="flex-1 items-center justify-center bg-slate-50">
-        {listHeader}
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text className="mt-4 text-slate-600">Loading services...</Text>
-      </View>
-    );
+    return <ServicesScreenSkeleton listHeader={listHeader} />;
   }
 
   if (error && !refreshing) {
@@ -694,6 +844,9 @@ export default function ServicesScreen({
     if (services.length === 0) {
       return (
         <ScrollView
+          ref={scrollRef}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
           className="flex-1"
           contentContainerStyle={{ flex: 1 }}
           refreshControl={
@@ -729,6 +882,7 @@ export default function ServicesScreen({
     return (
       <View className="flex-1">
         <FlatList
+          ref={scrollRef}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
           data={services}
@@ -753,6 +907,7 @@ export default function ServicesScreen({
           onApply={onFiltersChange}
           currentFilters={filters}
         />
+        {renderBackToTop()}
       </View>
     );
   }
@@ -762,6 +917,9 @@ export default function ServicesScreen({
   if (services.length === 0) {
     return (
       <ScrollView
+        ref={scrollRef}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         className="flex-1"
         contentContainerStyle={{ flex: 1 }}
         refreshControl={
@@ -797,6 +955,7 @@ export default function ServicesScreen({
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
+        ref={scrollRef}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         style={{ flex: 1, backgroundColor: COLORS.slate100 }}
@@ -912,6 +1071,8 @@ export default function ServicesScreen({
         userId={userId}
         onClose={() => setIsBoostModalVisible(false)}
       />
+
+      {renderBackToTop()}
     </View>
   );
 }

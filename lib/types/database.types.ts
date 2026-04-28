@@ -5,6 +5,7 @@ export type Profile = {
   first_name: string | null;
   last_name: string | null;
   profile_image_url: string | null;
+  bio: string | null;
   physis_verified: boolean;
   /** Display string from Google Places (e.g. "Digos City, Davao del Sur") */
   location_text: string | null;

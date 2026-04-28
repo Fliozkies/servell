@@ -4,7 +4,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   RefreshControl,
@@ -19,6 +18,7 @@ import {
   subscribeToConversations,
 } from "../../lib/api/messaging.api";
 import { supabase } from "../../lib/api/supabase";
+import { ConversationsScreenSkeleton } from "../../lib/components/SkeletonLoader";
 import { COLORS } from "../../lib/constants/theme";
 import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { ConversationWithDetails } from "../../lib/types/database.types";
@@ -169,12 +169,7 @@ export default function ConversationsScreen() {
   };
 
   if (loading) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loaderText}>Loading messages…</Text>
-      </View>
-    );
+    return <ConversationsScreenSkeleton />;
   }
 
   return (
