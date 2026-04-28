@@ -1,9 +1,10 @@
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -72,6 +73,19 @@ export default function CreateServiceScreen({
   const mapRef = useRef<MapView>(null);
 
   const form = useServiceForm();
+
+  // Intercept Android hardware back button and OS back gesture —
+  // without this, the OS has no navigation stack to go back to and exits the app.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        onCancel();
+        return true; // prevent default (app exit)
+      },
+    );
+    return () => subscription.remove();
+  }, [onCancel]);
 
   const handleOpenMapPicker = async () => {
     setMapModalVisible(true);
