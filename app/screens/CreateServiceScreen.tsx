@@ -1,4 +1,3 @@
-// app/screens/CreateServiceScreen.tsx
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import React, { useRef, useState } from "react";
@@ -27,7 +26,6 @@ import {
 import { CreateServiceProps } from "../../lib/types/custom.types";
 import { uploadImage } from "../../lib/utils/imageUtils";
 
-// Hides all Google POI markers, transit icons, and business labels
 const CLEAN_MAP_STYLE = [
   {
     featureType: "poi",
@@ -53,7 +51,6 @@ const CLEAN_MAP_STYLE = [
   },
 ];
 
-// Digos City default center
 const DIGOS_REGION: Region = {
   latitude: 6.7494,
   longitude: 125.3573,
@@ -76,15 +73,6 @@ export default function CreateServiceScreen({
 
   const form = useServiceForm();
 
-  if (form.loadingCategories) {
-    return (
-      <View className="flex-1 items-center justify-center bg-white">
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text className="mt-4 text-slate-600">Loading...</Text>
-      </View>
-    );
-  }
-
   const handleOpenMapPicker = async () => {
     setMapModalVisible(true);
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -105,7 +93,7 @@ export default function CreateServiceScreen({
         );
       }, 400);
     } catch {
-      // fallback to Digos default
+      // fall back to default region
     }
   };
 
@@ -206,7 +194,6 @@ export default function CreateServiceScreen({
         className="flex-1 bg-white"
       >
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          {/* Header */}
           <View className="bg-white border-b border-slate-200 px-6">
             <View className="flex-row items-center justify-between">
               <TouchableOpacity onPress={onCancel} className="p-2 -ml-2">
@@ -220,7 +207,6 @@ export default function CreateServiceScreen({
           </View>
 
           <View className="px-6 pb-6 pt-3">
-            {/* Image Upload */}
             <FormField label="Service Image">
               <TouchableOpacity
                 onPress={form.handlePickImage}
@@ -276,33 +262,41 @@ export default function CreateServiceScreen({
             </FormField>
 
             <FormField label="Category" required>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                className="-mx-1"
-              >
-                {form.categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    onPress={() => form.setSelectedCategory(cat.id)}
-                    className={`mx-1 px-4 py-2 rounded-full border ${
-                      form.selectedCategory === cat.id
-                        ? "bg-[#1877F2] border-[#1877F2]"
-                        : "bg-white border-slate-300"
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-medium ${
+              {form.loadingCategories ? (
+                <ActivityIndicator
+                  size="small"
+                  color={COLORS.primary}
+                  style={{ marginVertical: 8, alignSelf: "flex-start" }}
+                />
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  className="-mx-1"
+                >
+                  {form.categories.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      onPress={() => form.setSelectedCategory(cat.id)}
+                      className={`mx-1 px-4 py-2 rounded-full border ${
                         form.selectedCategory === cat.id
-                          ? "text-white"
-                          : "text-slate-700"
+                          ? "bg-[#1877F2] border-[#1877F2]"
+                          : "bg-white border-slate-300"
                       }`}
                     >
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                      <Text
+                        className={`text-sm font-medium ${
+                          form.selectedCategory === cat.id
+                            ? "text-white"
+                            : "text-slate-700"
+                        }`}
+                      >
+                        {cat.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
               {form.categories.find((c) => c.id === form.selectedCategory)
                 ?.name === "Others" && (
                 <FormField label="Specify Your Category" required>
@@ -358,7 +352,6 @@ export default function CreateServiceScreen({
               />
             </FormField>
 
-            {/* ── Pin on Map ─────────────────────────────────────────────── */}
             <FormField label="Pin Location on Map">
               <TouchableOpacity
                 onPress={handleOpenMapPicker}
@@ -386,7 +379,6 @@ export default function CreateServiceScreen({
                     >
                       <Marker coordinate={confirmedPin} />
                     </MapView>
-                    {/* Transparent overlay so tap re-opens picker */}
                     <View
                       style={{
                         position: "absolute",
@@ -462,7 +454,6 @@ export default function CreateServiceScreen({
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── Full-screen map picker modal ──────────────────────────────────── */}
       <Modal
         visible={mapModalVisible}
         animationType="slide"
