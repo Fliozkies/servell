@@ -214,6 +214,7 @@ export default function MainScreen() {
             filters={effectiveFilters}
             onFiltersChange={setFilters}
             onBack={() => {
+              setSearchQuery("");
               setActiveTab(previousTab);
             }}
           />
