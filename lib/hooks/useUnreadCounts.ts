@@ -33,7 +33,7 @@ interface UnreadCounts {
  */
 export function useUnreadCounts(): {
   counts: UnreadCounts;
-  resetNotifications: () => void;
+  resetNotifications: () => Promise<void>;
   refreshMessages: () => void;
 } {
   const [counts, setCounts] = useState<UnreadCounts>({
@@ -52,8 +52,13 @@ export function useUnreadCounts(): {
     setCounts((prev) => ({ ...prev, messages: total }));
   }, []);
 
-  const resetNotifications = useCallback(() => {
-    setCounts((prev) => ({ ...prev, notifications: 0 }));
+  const resetNotifications = useCallback(async () => {
+    try {
+      const fresh = await getUnreadNotificationCount();
+      setCounts((prev) => ({ ...prev, notifications: fresh }));
+    } catch {
+      setCounts((prev) => ({ ...prev, notifications: 0 }));
+    }
   }, []);
 
   useEffect(() => {

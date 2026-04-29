@@ -166,6 +166,7 @@ export default function NotificationScreen({
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
     );
+    onAllRead?.(); // re-fetch badge count in parent
     try {
       await markNotificationRead(id);
     } catch {
