@@ -1,12 +1,10 @@
-import { AntDesign } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { TextInput, TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/api/supabase";
 import BottomNav from "../../lib/components/BottomNav";
 import ServicesHeader from "../../lib/components/ServicesHeader";
-import { COLORS } from "../../lib/constants/theme";
 import { useUnreadCounts } from "../../lib/hooks/useUnreadCounts";
 import { PageName } from "../../lib/types/custom.types";
 import { FilterOptions, UserLocation } from "../../lib/types/filter.types";
@@ -15,6 +13,7 @@ import CreateServiceScreen from "../screens/CreateServiceScreen";
 import MapScreen from "../screens/MapScreen";
 import NotificationScreen from "../screens/NotificationScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import SearchScreen from "../screens/SearchScreen";
 import ServicesScreen from "../screens/ServicesScreen";
 
 const DEFAULT_FILTERS: FilterOptions = {
@@ -92,15 +91,6 @@ export default function MainScreen() {
     userLocation: effectiveUserLocation,
   };
 
-  const hasActiveFilters =
-    filters.categoryId !== null ||
-    filters.priceRange.min !== null ||
-    filters.priceRange.max !== null ||
-    filters.minRating !== null ||
-    (filters.location && filters.location.trim() !== "") ||
-    filters.sortBy !== "newest" ||
-    filters.userLocation !== null;
-
   useEffect(() => {
     if (activeTab === "Message") refreshMessages();
   }, [activeTab, refreshMessages]);
@@ -147,6 +137,10 @@ export default function MainScreen() {
             setPreviousTab(activeTab);
             setActiveTab("Notification");
           }}
+          onSearchPress={() => {
+            setPreviousTab(activeTab);
+            setActiveTab("Search");
+          }}
           unreadNotifications={counts.notifications}
         />
       )}
@@ -166,75 +160,6 @@ export default function MainScreen() {
             filters={effectiveFilters}
             onFiltersChange={setFilters}
             effectiveUserLocation={effectiveUserLocation}
-            listHeader={
-              <View className="px-4 pt-3 pb-4">
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: "#fff",
-                    borderWidth: 1,
-                    borderColor: COLORS.slate200,
-                    borderRadius: 16,
-                    paddingHorizontal: 12,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.05,
-                    shadowRadius: 2,
-                    elevation: 1,
-                  }}
-                >
-                  <AntDesign name="search" size={18} color={COLORS.slate400} />
-                  <TextInput
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholder="Search services..."
-                    placeholderTextColor={COLORS.slate400}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 12,
-                      paddingHorizontal: 8,
-                      fontSize: 15,
-                      color: "#0f172a",
-                    }}
-                    returnKeyType="search"
-                  />
-                  {searchQuery.length > 0 && (
-                    <TouchableOpacity onPress={() => setSearchQuery("")}>
-                      <AntDesign
-                        name="close-circle"
-                        size={16}
-                        color={COLORS.slate400}
-                      />
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => setFilterModalVisible(true)}
-                    activeOpacity={0.8}
-                    style={{ marginLeft: 8 }}
-                  >
-                    <View
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 12,
-                        backgroundColor: !!hasActiveFilters
-                          ? COLORS.primary
-                          : COLORS.slate100,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <AntDesign
-                        name="filter"
-                        size={18}
-                        color={!!hasActiveFilters ? "#fff" : COLORS.slate500}
-                      />
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            }
           />
         </View>
 
@@ -281,9 +206,21 @@ export default function MainScreen() {
             onCancel={() => setActiveTab("Services")}
           />
         )}
+
+        {activeTab === "Search" && (
+          <SearchScreen
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            filters={effectiveFilters}
+            onFiltersChange={setFilters}
+            onBack={() => {
+              setActiveTab(previousTab);
+            }}
+          />
+        )}
       </View>
 
-      {activeTab !== "Post" && (
+      {activeTab !== "Post" && activeTab !== "Search" && (
         <BottomNav
           currentTab={activeTab}
           onTabPress={handleTabPress}
