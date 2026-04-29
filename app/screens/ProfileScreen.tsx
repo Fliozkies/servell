@@ -93,7 +93,11 @@ async function handleLogout() {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
-export default function ProfileScreen() {
+export default function ProfileScreen({
+  onVerified,
+}: {
+  onVerified?: () => void;
+}) {
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -709,6 +713,7 @@ export default function ProfileScreen() {
         profile={profile}
         onClose={() => setIsSettingsVisible(false)}
         onProfileUpdated={setProfile}
+        onVerified={onVerified}
       />
 
       <ProfileImageModal
@@ -1140,17 +1145,59 @@ const SettingsModal = ({
   profile,
   onClose,
   onProfileUpdated,
+  onVerified,
 }: {
   visible: boolean;
   profile: Profile | null;
   onClose: () => void;
   onProfileUpdated: (p: Profile) => void;
+  onVerified?: () => void;
 }) => {
   const [section, setSection] = useState<SettingsSection>("main");
   const [firstName, setFirstName] = useState(profile?.first_name ?? "");
   const [lastName, setLastName] = useState(profile?.last_name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+
+  const handleVerify = async () => {
+    if (!profile || profile.physis_verified) return;
+    Alert.alert(
+      "Verify Account",
+      "By proceeding, you confirm that you are a real person. Your account will be marked as verified.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Verify Now",
+          onPress: async () => {
+            setVerifying(true);
+            try {
+              const { data, error } = await supabase
+                .from("profiles")
+                .update({ physis_verified: true })
+                .eq("id", profile.id)
+                .select()
+                .single();
+              if (error) throw error;
+              onProfileUpdated(data);
+              onVerified?.();
+              Alert.alert(
+                "Verified! ✅",
+                "Your account has been verified. You can now post services.",
+              );
+            } catch (err: any) {
+              Alert.alert(
+                "Error",
+                err?.message ?? "Verification failed. Please try again.",
+              );
+            } finally {
+              setVerifying(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // Notification preferences state
   const [notifMessages, setNotifMessages] = useState(true);
@@ -1394,6 +1441,70 @@ const SettingsModal = ({
                   style={{ minHeight: 100 }}
                 />
               </FormField>
+            </View>
+          )}
+          {section === "verify" && (
+            <View className="p-5">
+              {profile?.physis_verified ? (
+                <View className="items-center py-8 gap-4">
+                  <View className="w-20 h-20 rounded-full bg-green-100 items-center justify-center">
+                    <Shield size={40} color={COLORS.success} />
+                  </View>
+                  <Text className="text-xl font-bold text-slate-900">
+                    Account Verified
+                  </Text>
+                  <Text className="text-sm text-slate-500 text-center">
+                    Your account has been verified. You can post services on
+                    Servell.
+                  </Text>
+                </View>
+              ) : (
+                <View className="gap-4">
+                  <View className="items-center py-6 gap-3">
+                    <View className="w-20 h-20 rounded-full bg-orange-100 items-center justify-center">
+                      <Shield size={40} color="#f97316" />
+                    </View>
+                    <Text className="text-xl font-bold text-slate-900">
+                      Verify Your Account
+                    </Text>
+                    <Text className="text-sm text-slate-500 text-center leading-5">
+                      Verification lets you post services and builds trust with
+                      buyers on the platform.
+                    </Text>
+                  </View>
+                  <View className="bg-slate-50 border border-slate-100 rounded-2xl p-4 gap-3">
+                    <Text className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      What you get
+                    </Text>
+                    {[
+                      "✅  Post and manage services",
+                      "🔒  Verified badge on your profile",
+                      "📈  Higher trust from buyers",
+                    ].map((item) => (
+                      <Text key={item} className="text-sm text-slate-700">
+                        {item}
+                      </Text>
+                    ))}
+                  </View>
+                  <TouchableOpacity
+                    onPress={handleVerify}
+                    disabled={verifying}
+                    className="bg-[#1877F2] rounded-2xl py-4 items-center"
+                  >
+                    {verifying ? (
+                      <ActivityIndicator color="white" />
+                    ) : (
+                      <Text className="text-white font-bold text-base">
+                        Verify My Account
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  <Text className="text-xs text-slate-400 text-center">
+                    By verifying, you confirm you are a real person and agree to
+                    our Terms of Service.
+                  </Text>
+                </View>
+              )}
             </View>
           )}
           {section === "notifPrefs" && (

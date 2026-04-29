@@ -1,7 +1,7 @@
 import { AntDesign } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/api/supabase";
 import BottomNav from "../../lib/components/BottomNav";
@@ -46,6 +46,7 @@ export default function MainScreen() {
   // Profile location fallback — loaded once on mount from the user's profile.
   // Used as userLocation when GPS is not granted and "nearest" sort is active.
   const [profileLocation, setProfileLocation] = useState<UserLocation>(null);
+  const [isVerified, setIsVerified] = useState(false);
 
   // Refresh keys
   const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
@@ -66,7 +67,7 @@ export default function MainScreen() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("location_lat, location_lng")
+        .select("location_lat, location_lng, physis_verified")
         .eq("id", user.id)
         .single();
 
@@ -76,6 +77,7 @@ export default function MainScreen() {
           longitude: profile.location_lng,
         });
       }
+      setIsVerified(profile?.physis_verified ?? false);
     }
     loadProfileLocation();
   }, []);
@@ -114,6 +116,14 @@ export default function MainScreen() {
   );
 
   const handleTabPress = (tab: PageName) => {
+    if (tab === "Post" && !isVerified) {
+      Alert.alert(
+        "Verification Required",
+        "You need to verify your account before posting services. Go to Profile → Settings → Verify Account.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
     if (tab === activeTab) {
       switch (tab) {
         case "Services":
@@ -272,7 +282,10 @@ export default function MainScreen() {
             display: activeTab === "Profile" ? "flex" : "none",
           }}
         >
-          <ProfileScreen key={profileRefreshKey} />
+          <ProfileScreen
+            key={profileRefreshKey}
+            onVerified={() => setIsVerified(true)}
+          />
         </View>
 
         {activeTab === "Post" && (
@@ -289,6 +302,7 @@ export default function MainScreen() {
           onTabPress={handleTabPress}
           unreadMessages={counts.messages}
           unreadNotifications={counts.notifications}
+          isVerified={isVerified}
         />
       )}
     </SafeAreaView>

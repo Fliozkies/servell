@@ -1,6 +1,7 @@
 // lib/components/BottomNav.tsx
 import {
   Home,
+  Lock,
   LucideProps,
   Map,
   MessageSquare,
@@ -27,6 +28,7 @@ interface BottomNavProps {
   onTabPress: (name: PageName) => void;
   unreadMessages?: number;
   unreadNotifications?: number;
+  isVerified?: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ const BottomNav = memo(function BottomNav({
   currentTab,
   onTabPress,
   unreadMessages = 0,
+  isVerified = false,
 }: BottomNavProps) {
   const insets = useSafeAreaInsets();
   const { subscribe } = useScrollDirection();
@@ -145,6 +148,7 @@ const NavButton = memo(function NavButton({
   name,
   badgeCount = 0,
   isPost = false,
+  isLocked = false,
 }: {
   icon: React.ReactElement<LucideProps>;
   active: boolean;
@@ -152,6 +156,7 @@ const NavButton = memo(function NavButton({
   name: string;
   badgeCount?: number;
   isPost?: boolean;
+  isLocked?: boolean;
 }) {
   const badge = formatBadge(badgeCount);
   const isWide = badge.length > 1;
@@ -243,20 +248,44 @@ const NavButton = memo(function NavButton({
         <Animated.View
           style={{
             transform: [{ scale: postPressScale }],
+            position: "relative",
           }}
         >
-          <Animated.View style={{ transform: [{ rotate }] }}>
+          <Animated.View
+            style={{ transform: [{ rotate }], opacity: isLocked ? 0.4 : 1 }}
+          >
             {React.cloneElement(icon, {
               color: active ? COLORS.primary : COLORS.slate400,
               strokeWidth: active ? 2.5 : 2,
             })}
           </Animated.View>
+          {isLocked && (
+            <View
+              style={{
+                position: "absolute",
+                bottom: -4,
+                right: -6,
+                backgroundColor: "#f97316",
+                borderRadius: 8,
+                width: 16,
+                height: 16,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Lock size={9} color="white" strokeWidth={2.5} />
+            </View>
+          )}
         </Animated.View>
         <Text
           style={{
             fontSize: 10,
             fontWeight: active ? "700" : "500",
-            color: active ? COLORS.primary : COLORS.slate400,
+            color: isLocked
+              ? COLORS.slate300
+              : active
+                ? COLORS.primary
+                : COLORS.slate400,
             marginTop: 3,
           }}
         >
