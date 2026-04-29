@@ -1441,6 +1441,30 @@ const SettingsModal = ({
                   style={{ minHeight: 100 }}
                 />
               </FormField>
+              <FormField label="Location">
+                <View
+                  className="border border-slate-200 rounded-xl px-4 py-3 bg-slate-50"
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                >
+                  <MapPin size={16} color={COLORS.slate400} />
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 15,
+                      color: profile?.location_text
+                        ? COLORS.slate900
+                        : COLORS.slate400,
+                    }}
+                  >
+                    {profile?.location_text ?? "No location set"}
+                  </Text>
+                </View>
+                <Text
+                  style={{ fontSize: 12, color: COLORS.slate400, marginTop: 4 }}
+                >
+                  Set during registration. Contact support to change.
+                </Text>
+              </FormField>
             </View>
           )}
           {section === "verify" && (

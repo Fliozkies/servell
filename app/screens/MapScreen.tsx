@@ -62,12 +62,14 @@ function formatDistance(km: number): string {
   return `${Math.round(km)}km away`;
 }
 
-export default function MapScreen() {
+export default function MapScreen({ active = false }: { active?: boolean }) {
   const mapRef = useRef<MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(
     null,
   );
   const searchInputRef = useRef<TextInput>(null);
+
+  const locationTrackingStarted = useRef(false);
 
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +83,7 @@ export default function MapScreen() {
   } | null>(null);
   const [locationError, setLocationError] = useState(false);
   const [centeredOnUser, setCenteredOnUser] = useState(false);
+  const centeredOnUserRef = useRef(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -103,13 +106,22 @@ export default function MapScreen() {
         .eq("id", user.id)
         .single();
       if (profile?.location_lat != null && profile?.location_lng != null) {
-        setProfileLocation({
+        const coords = {
           latitude: profile.location_lat,
           longitude: profile.location_lng,
-        });
+        };
+        setProfileLocation(coords);
+        // Pan to profile location only if GPS hasn't already taken over
+        if (!userLocation) {
+          mapRef.current?.animateToRegion(
+            { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+            800,
+          );
+        }
       }
     }
     loadProfileLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadServices = useCallback(async () => {
@@ -132,19 +144,21 @@ export default function MapScreen() {
       return;
     }
     try {
-      const initial = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const coords = {
-        latitude: initial.coords.latitude,
-        longitude: initial.coords.longitude,
-      };
-      setUserLocation(coords);
-      mapRef.current?.animateToRegion(
-        { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
-        800,
-      );
-      setCenteredOnUser(true);
+      // Use last known position first to avoid a second OS-level prompt
+      // that getCurrentPositionAsync can trigger on some devices.
+      const last = await Location.getLastKnownPositionAsync();
+      const coords = last
+        ? { latitude: last.coords.latitude, longitude: last.coords.longitude }
+        : null;
+      if (coords) {
+        setUserLocation(coords);
+        mapRef.current?.animateToRegion(
+          { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+          800,
+        );
+        centeredOnUserRef.current = true;
+        setCenteredOnUser(true);
+      }
     } catch {
       // fall back to profile location
     }
@@ -154,21 +168,34 @@ export default function MapScreen() {
         distanceInterval: LOCATION_UPDATE_DISTANCE_M,
       },
       (loc) => {
-        setUserLocation({
+        const coords = {
           latitude: loc.coords.latitude,
           longitude: loc.coords.longitude,
-        });
+        };
+        setUserLocation(coords);
+        // Pan to first live fix if we had no last-known position
+        if (!centeredOnUserRef.current) {
+          mapRef.current?.animateToRegion(
+            { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+            800,
+          );
+          centeredOnUserRef.current = true;
+          setCenteredOnUser(true);
+        }
       },
     );
   }, []);
 
   useEffect(() => {
     loadServices();
-    startLocationTracking();
+    if (active && !locationTrackingStarted.current) {
+      locationTrackingStarted.current = true;
+      startLocationTracking();
+    }
     return () => {
       locationSubscription.current?.remove();
     };
-  }, [loadServices, startLocationTracking]);
+  }, [loadServices, startLocationTracking, active]);
 
   const handleRecenter = () => {
     if (!userLocation) return;
@@ -270,7 +297,7 @@ export default function MapScreen() {
           }
         }}
       >
-        {userLocation && (
+        {userLocation ? (
           <Marker
             coordinate={userLocation}
             anchor={{ x: 0.5, y: 0.5 }}
@@ -281,7 +308,20 @@ export default function MapScreen() {
               <View style={styles.userMarkerPulse} />
             </View>
           </Marker>
-        )}
+        ) : profileLocation ? (
+          <Marker
+            coordinate={profileLocation}
+            anchor={{ x: 0.5, y: 0.5 }}
+            zIndex={999}
+          >
+            <View style={styles.userMarkerWrapper}>
+              <View style={[styles.userMarkerDot, styles.profileMarkerDot]} />
+              <View
+                style={[styles.userMarkerPulse, styles.profileMarkerPulse]}
+              />
+            </View>
+          </Marker>
+        ) : null}
 
         {services.map((service) => {
           const isSelected = service.id === selectedServiceId;
@@ -518,6 +558,12 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     backgroundColor: "rgba(239,68,68,0.2)",
+  },
+  profileMarkerDot: {
+    backgroundColor: "#64748b",
+  },
+  profileMarkerPulse: {
+    backgroundColor: "rgba(100,116,139,0.2)",
   },
 
   // ── Service pins ──

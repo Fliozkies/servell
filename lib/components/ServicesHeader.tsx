@@ -1,14 +1,16 @@
-import { Bell } from "lucide-react-native";
+import { Bell, Search } from "lucide-react-native";
 import { Text, TouchableOpacity, View } from "react-native";
 import { COLORS } from "../constants/theme";
 
 type ServicesHeaderProps = {
   onNotificationPress: () => void;
+  onSearchPress: () => void;
   unreadNotifications?: number;
 };
 
 export default function ServicesHeader({
   onNotificationPress,
+  onSearchPress,
   unreadNotifications = 0,
 }: ServicesHeaderProps) {
   const badgeCount =
@@ -28,54 +30,74 @@ export default function ServicesHeader({
         Servell
       </Text>
 
-      <TouchableOpacity
-        onPress={onNotificationPress}
-        activeOpacity={0.7}
-        style={{ position: "relative" }}
-      >
-        <View
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 19,
-            borderWidth: 1,
-            borderColor: COLORS.slate200,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Bell size={20} color={COLORS.slate600} strokeWidth={2} />
-        </View>
-        {badgeCount && (
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        {/* Search button */}
+        <TouchableOpacity onPress={onSearchPress} activeOpacity={0.7}>
           <View
             style={{
-              position: "absolute",
-              top: -3,
-              right: -3,
-              backgroundColor: COLORS.danger,
-              borderRadius: 10,
-              minWidth: isWideBadge ? 20 : 18,
-              height: 18,
-              paddingHorizontal: isWideBadge ? 4 : 0,
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              borderWidth: 1,
+              borderColor: COLORS.slate200,
               alignItems: "center",
               justifyContent: "center",
-              borderWidth: 2,
-              borderColor: "#fff",
             }}
           >
-            <Text
+            <Search size={20} color={COLORS.slate600} strokeWidth={2} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Notification button */}
+        <TouchableOpacity
+          onPress={onNotificationPress}
+          activeOpacity={0.7}
+          style={{ position: "relative" }}
+        >
+          <View
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              borderWidth: 1,
+              borderColor: COLORS.slate200,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Bell size={20} color={COLORS.slate600} strokeWidth={2} />
+          </View>
+          {badgeCount && (
+            <View
               style={{
-                color: "#fff",
-                fontSize: 10,
-                fontWeight: "700",
-                lineHeight: 12,
+                position: "absolute",
+                top: -3,
+                right: -3,
+                backgroundColor: COLORS.danger,
+                borderRadius: 10,
+                minWidth: isWideBadge ? 20 : 18,
+                height: 18,
+                paddingHorizontal: isWideBadge ? 4 : 0,
+                alignItems: "center",
+                justifyContent: "center",
+                borderWidth: 2,
+                borderColor: "#fff",
               }}
             >
-              {badgeCount}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
+              <Text
+                style={{
+                  color: "#fff",
+                  fontSize: 10,
+                  fontWeight: "700",
+                  lineHeight: 12,
+                }}
+              >
+                {badgeCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }

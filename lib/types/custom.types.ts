@@ -4,7 +4,8 @@ export type PageName =
   | "Notification"
   | "Message"
   | "Post"
-  | "Profile";
+  | "Profile"
+  | "Search";
 
 export type ItemProps = {
   title: string;
