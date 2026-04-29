@@ -38,7 +38,6 @@ export default function MainScreen() {
   const [previousTab, setPreviousTab] = useState<PageName>("Services");
 
   // Search / filter state (Services tab)
-  const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
 
@@ -164,7 +163,7 @@ export default function MainScreen() {
         >
           <ServicesScreen
             key={servicesRefreshKey}
-            searchQuery={searchQuery}
+            searchQuery=""
             filterModalVisible={filterModalVisible}
             onFilterModalClose={() => setFilterModalVisible(false)}
             filters={effectiveFilters}
@@ -222,8 +221,6 @@ export default function MainScreen() {
 
         {activeTab === "Search" && (
           <SearchScreen
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
             filters={effectiveFilters}
             onFiltersChange={setFilters}
             onBack={() => {
