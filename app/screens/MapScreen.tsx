@@ -8,13 +8,17 @@ import {
   Platform,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import MapView, { Callout, Marker, Region } from "react-native-maps";
-import { fetchServices } from "../../lib/api/services.api";
+import { searchAndFilterServices } from "../../lib/api/services.api";
+import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { COLORS } from "../../lib/constants/theme";
+import { useDebounce } from "../../lib/hooks/useDebounce";
 import { ServiceWithDetails } from "../../lib/types/database.types";
+import { FilterOptions } from "../../lib/types/filter.types";
 
 // Hides all Google POI markers, transit icons, and business labels
 const CLEAN_MAP_STYLE = [
@@ -54,7 +58,15 @@ const DIGOS_REGION: Region = {
 // 30m is fine-grained enough to feel live without hammering the GPS.
 const LOCATION_UPDATE_DISTANCE_M = 30;
 
-export default function MapScreen() {
+type MapScreenProps = {
+  filters: FilterOptions;
+  onFiltersChange: (filters: FilterOptions) => void;
+};
+
+export default function MapScreen({
+  filters,
+  onFiltersChange,
+}: MapScreenProps) {
   const mapRef = useRef<MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(
     null,
@@ -62,6 +74,8 @@ export default function MapScreen() {
 
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -69,20 +83,63 @@ export default function MapScreen() {
   const [locationError, setLocationError] = useState(false);
   const [centeredOnUser, setCenteredOnUser] = useState(false);
 
-  // ── Load all services that have coordinates ──────────────────────────────
-  const loadServices = useCallback(async () => {
-    try {
-      const data = await fetchServices();
-      // Only keep services that have been pinned
-      setServices(
-        data.filter((s) => s.latitude != null && s.longitude != null),
-      );
-    } catch {
-      // Non-fatal — map still works without services
-    } finally {
-      setLoading(false);
+  const debouncedSearch = useDebounce(searchQuery, 400);
+
+  const hasActiveFilters =
+    filters.categoryId !== null ||
+    filters.priceRange.min !== null ||
+    filters.priceRange.max !== null ||
+    filters.minRating !== null ||
+    (filters.location && filters.location.trim() !== "") ||
+    filters.sortBy !== "newest";
+
+  const shouldFitFilteredResults =
+    debouncedSearch.trim().length > 0 || hasActiveFilters;
+
+  // ── Load services matching map search / filters, then keep pinned only ───
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadServices() {
+      try {
+        const data = await searchAndFilterServices({
+          searchQuery: debouncedSearch,
+          categoryId: filters.categoryId,
+          minPrice: filters.priceRange.min,
+          maxPrice: filters.priceRange.max,
+          minRating: filters.minRating,
+          location: filters.location,
+          sortBy: filters.sortBy,
+          userLocation: filters.userLocation,
+        });
+
+        if (!cancelled) {
+          setServices(
+            data.filter((s) => s.latitude != null && s.longitude != null),
+          );
+        }
+      } catch {
+        // Non-fatal — map still works without services
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  }, []);
+
+    loadServices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debouncedSearch,
+    filters.categoryId,
+    filters.priceRange.min,
+    filters.priceRange.max,
+    filters.minRating,
+    filters.location,
+    filters.sortBy,
+    filters.userLocation,
+  ]);
 
   // ── Live location tracking ───────────────────────────────────────────────
   const startLocationTracking = useCallback(async () => {
@@ -129,14 +186,43 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
-    loadServices();
     startLocationTracking();
 
     return () => {
       // Clean up subscription on unmount
       locationSubscription.current?.remove();
     };
-  }, [loadServices, startLocationTracking]);
+  }, [startLocationTracking]);
+
+  useEffect(() => {
+    if (!shouldFitFilteredResults || services.length === 0) return;
+
+    const coordinates = services.map((service) => ({
+      latitude: service.latitude!,
+      longitude: service.longitude!,
+    }));
+
+    const timer = setTimeout(() => {
+      if (coordinates.length === 1) {
+        mapRef.current?.animateToRegion(
+          {
+            ...coordinates[0],
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          },
+          500,
+        );
+        return;
+      }
+
+      mapRef.current?.fitToCoordinates(coordinates, {
+        edgePadding: { top: 150, right: 60, bottom: 120, left: 60 },
+        animated: true,
+      });
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [services, shouldFitFilteredResults]);
 
   // ── Recenter button ──────────────────────────────────────────────────────
   const handleRecenter = () => {
@@ -235,6 +321,48 @@ export default function MapScreen() {
         ))}
       </MapView>
 
+      {/* ── Search bar ── */}
+      <View style={styles.searchBarWrapper}>
+        <View style={styles.searchBar}>
+          <AntDesign name="search" size={18} color={COLORS.slate400} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search services..."
+            placeholderTextColor={COLORS.slate400}
+            style={styles.searchInput}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <AntDesign
+                name="close-circle"
+                size={16}
+                color={COLORS.slate400}
+              />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => setFilterModalVisible(true)}
+            activeOpacity={0.8}
+            style={styles.filterBtn}
+          >
+            <View
+              style={[
+                styles.filterIconWrap,
+                hasActiveFilters && styles.filterIconWrapActive,
+              ]}
+            >
+              <AntDesign
+                name="filter"
+                size={18}
+                color={hasActiveFilters ? "#fff" : COLORS.slate500}
+              />
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* ── Service count badge ── */}
       <View style={styles.countBadge}>
         <Ionicons name="location" size={13} color="#1877F2" />
@@ -271,14 +399,26 @@ export default function MapScreen() {
         <View style={styles.emptyOverlay}>
           <View style={styles.emptyCard}>
             <Ionicons name="map-outline" size={32} color={COLORS.slate400} />
-            <Text style={styles.emptyTitle}>No pinned services yet</Text>
+            <Text style={styles.emptyTitle}>
+              {shouldFitFilteredResults
+                ? "No matching services on the map"
+                : "No pinned services yet"}
+            </Text>
             <Text style={styles.emptyBody}>
-              Services will appear here once providers pin their location when
-              posting.
+              {shouldFitFilteredResults
+                ? "Try adjusting your search or filters."
+                : "Services will appear here once providers pin their location when posting."}
             </Text>
           </View>
         </View>
       )}
+
+      <FilterBottomSheet
+        visible={filterModalVisible}
+        onClose={() => setFilterModalVisible(false)}
+        onApply={onFiltersChange}
+        currentFilters={filters}
+      />
     </View>
   );
 }
@@ -294,6 +434,54 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: "#64748b",
+  },
+  // Search bar
+  searchBarWrapper: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    right: 12,
+    zIndex: 20,
+    elevation: 8,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 3,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    fontSize: 15,
+    color: "#0f172a",
+  },
+  filterBtn: {
+    marginLeft: 8,
+  },
+  filterIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.slate100,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterIconWrapActive: {
+    backgroundColor: COLORS.primary,
   },
   // User marker
   userMarkerWrapper: {
@@ -389,7 +577,7 @@ const styles = StyleSheet.create({
   // Count badge
   countBadge: {
     position: "absolute",
-    top: 12,
+    top: 70,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",

@@ -166,7 +166,11 @@ export default function MainScreen() {
         <View
           style={{ flex: 1, display: activeTab === "Map" ? "flex" : "none" }}
         >
-          <MapScreen key={mapRefreshKey} />
+          <MapScreen
+            key={mapRefreshKey}
+            filters={effectiveFilters}
+            onFiltersChange={setFilters}
+          />
         </View>
 
         <View
