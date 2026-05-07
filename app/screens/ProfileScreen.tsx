@@ -116,8 +116,6 @@ export default function ProfileScreen() {
   const [isProfileImageModalVisible, setIsProfileImageModalVisible] =
     useState(false);
 
-  const subscriptionsLoadedRef = useRef(false);
-  const reviewsLoadedRef = useRef(false);
   const actionSheetSlide = useRef(new Animated.Value(0)).current;
   const actionSheetBackdrop = useRef(new Animated.Value(0)).current;
 
@@ -186,29 +184,38 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+  const handleTabPress = useCallback(
+    (tab: ProfileTab) => {
+      if (tab === activeTab) return;
+
+      if (tab === "posts") setLoadingServices(true);
+      else if (tab === "subscriptions") setLoadingSubscriptions(true);
+      else setLoadingReviews(true);
+
+      setActiveTab(tab);
+    },
+    [activeTab],
+  );
+
   useEffect(() => {
-    if (currentUserId) loadServices();
-  }, [currentUserId, loadServices]);
-  useEffect(() => {
-    if (activeTab === "subscriptions" && !subscriptionsLoadedRef.current) {
-      subscriptionsLoadedRef.current = true;
+    if (!currentUserId) return;
+
+    if (activeTab === "posts") {
+      loadServices();
+    } else if (activeTab === "subscriptions") {
       loadSubscriptions();
-    }
-    if (activeTab === "reviews" && !reviewsLoadedRef.current) {
-      reviewsLoadedRef.current = true;
+    } else if (activeTab === "reviews") {
       loadReviews();
     }
-  }, [activeTab, loadReviews, loadSubscriptions]);
+  }, [activeTab, currentUserId, loadReviews, loadServices, loadSubscriptions]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProfile();
     if (activeTab === "posts") await loadServices();
     else if (activeTab === "subscriptions") {
-      subscriptionsLoadedRef.current = true;
       await loadSubscriptions();
     } else if (activeTab === "reviews") {
-      reviewsLoadedRef.current = true;
       await loadReviews();
     }
     setRefreshing(false);
@@ -449,7 +456,7 @@ export default function ProfileScreen() {
         <TabBar
           tabs={PROFILE_TABS}
           activeTab={activeTab}
-          onTabPress={setActiveTab}
+          onTabPress={handleTabPress}
         />
 
         {/* Tab content */}
