@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { fetchServiceComments } from "../../api/comments.api";
+import { VERTICAL_LIST_PROPS } from "../../constants/performance";
 import {
   CommentSortOption,
   CommentWithDetails,
@@ -139,8 +140,6 @@ export default function CommentsTab({
     setSortBy(newSort);
     setPage(0);
     setHasMore(true);
-    // Reload with new sort
-    setTimeout(() => loadComments(0), 100);
   };
 
   const handleAddComment = () => {
@@ -267,6 +266,7 @@ export default function CommentsTab({
   return (
     <View className="flex-1 bg-slate-50">
       <FlatList
+        {...VERTICAL_LIST_PROPS}
         data={comments}
         ref={flatListRef}
         keyExtractor={(item) => item.id}

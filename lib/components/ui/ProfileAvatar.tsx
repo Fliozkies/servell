@@ -1,6 +1,7 @@
 import React from "react";
-import { Image, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Profile } from "../../types/database.types";
+import { CachedImage } from "./CachedImage";
 
 interface ProfileAvatarProps {
   profile: Profile | null | undefined;
@@ -46,10 +47,9 @@ export const ProfileAvatar: React.FC<ProfileAvatarProps> = ({
       }}
     >
       {profile?.profile_image_url ? (
-        <Image
-          source={{ uri: profile.profile_image_url }}
+        <CachedImage
+          uri={profile.profile_image_url}
           style={{ width: size, height: size }}
-          resizeMode="cover"
         />
       ) : (
         <Text

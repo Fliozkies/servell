@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,7 +15,9 @@ import {
   View,
 } from "react-native";
 import MapView, { MapPressEvent, Marker, Region } from "react-native-maps";
+import { invalidateServicesCache } from "../../lib/api/services.api";
 import { supabase } from "../../lib/api/supabase";
+import { CachedImage } from "../../lib/components/ui/CachedImage";
 import { FormField } from "../../lib/components/ui/FormField";
 import { TagInput } from "../../lib/components/ui/TagInput";
 import { COLORS } from "../../lib/constants/theme";
@@ -184,6 +185,7 @@ export default function CreateServiceScreen({
 
       if (error) throw error;
 
+      invalidateServicesCache();
       Alert.alert("Success!", "Your service has been posted.", [
         { text: "OK", onPress: onServiceCreated },
       ]);
@@ -228,10 +230,9 @@ export default function CreateServiceScreen({
                 style={{ height: 200 }}
               >
                 {form.selectedImage ? (
-                  <Image
-                    source={{ uri: form.selectedImage.uri }}
-                    className="w-full h-full"
-                    resizeMode="cover"
+                  <CachedImage
+                    uri={form.selectedImage.uri}
+                    style={{ width: "100%", height: "100%" }}
                   />
                 ) : (
                   <View className="flex-1 items-center justify-center">

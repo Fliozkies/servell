@@ -16,6 +16,7 @@ import {
 import MapView, { Callout, Marker, Region } from "react-native-maps";
 import { fetchServices, haversineDistance } from "../../lib/api/services.api";
 import { supabase } from "../../lib/api/supabase";
+import { SMALL_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useDebounce } from "../../lib/hooks/useDebounce";
 import { ServiceWithDetails } from "../../lib/types/database.types";
@@ -423,6 +424,7 @@ export default function MapScreen({ active = false }: { active?: boolean }) {
               </View>
             ) : (
               <FlatList
+                {...SMALL_LIST_PROPS}
                 data={suggestions}
                 keyExtractor={(item) => item.id}
                 keyboardShouldPersistTaps="always"

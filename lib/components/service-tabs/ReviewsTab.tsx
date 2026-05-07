@@ -17,6 +17,7 @@ import {
   fetchServiceReviews,
   getUserReviewForService,
 } from "../../api/reviews.api";
+import { VERTICAL_LIST_PROPS } from "../../constants/performance";
 import {
   ReviewFilterOptions,
   ReviewWithDetails,
@@ -368,6 +369,7 @@ export default function ReviewsTab({
   return (
     <View className="flex-1">
       <FlatList
+        {...VERTICAL_LIST_PROPS}
         ref={flatListRef}
         data={reviews}
         keyExtractor={(item) => item.id}

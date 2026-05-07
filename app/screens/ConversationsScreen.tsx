@@ -4,7 +4,6 @@ import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   FlatList,
-  Image,
   RefreshControl,
   StyleSheet,
   Text,
@@ -16,173 +15,200 @@ import {
   isImageMessage,
   subscribeToConversations,
 } from "../../lib/api/messaging.api";
-import { supabase } from "../../lib/api/supabase";
 import { ConversationsScreenSkeleton } from "../../lib/components/SkeletonLoader";
+import { CachedImage } from "../../lib/components/ui/CachedImage";
+import { VERTICAL_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
+import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
 import { ConversationWithDetails } from "../../lib/types/database.types";
 import { formatRelativeTime } from "../../lib/utils/date";
 import { formatDisplayName } from "../../lib/utils/format";
 
-// Module-level cache — survives component unmount/remount (navigation back & forth).
-// Initialising useState from this means the list renders instantly on every
-// subsequent visit without waiting for the network.
-let conversationsCache: ConversationWithDetails[] = [];
-let cachedUserId: string | null = null;
-let hasInitialized = false; // module-level so it survives remounts
+// Module-level cache keyed by userId — survives navigation without leaking one
+// account's conversation identity into another account after sign out/sign in.
+const conversationsCacheMap = new Map<string, ConversationWithDetails[]>();
+
+function getConversationPreview(msg: ConversationWithDetails["last_message"]) {
+  if (!msg) return "No messages yet";
+  if (isImageMessage(msg.content)) return "📷 Photo";
+  return msg.content;
+}
+
+const ConversationRow = React.memo(function ConversationRow({
+  item,
+  currentUserId,
+  onPress,
+}: {
+  item: ConversationWithDetails;
+  currentUserId: string | null;
+  onPress: (id: string) => void;
+}) {
+  const isUserBuyer = currentUserId === item.buyer_id;
+  const otherUser = isUserBuyer ? item.seller_profile : item.buyer_profile;
+  const otherName = formatDisplayName(otherUser ?? null, "Unknown User");
+  const initials = otherName.charAt(0).toUpperCase();
+  const hasUnread = (item.unread_count || 0) > 0;
+  const preview = getConversationPreview(item.last_message);
+
+  return (
+    <TouchableOpacity
+      onPress={() => onPress(item.id)}
+      style={[styles.row, hasUnread && styles.rowUnread]}
+      activeOpacity={0.7}
+    >
+      <View style={styles.avatarWrap}>
+        {item.service?.image_url ? (
+          <CachedImage uri={item.service.image_url} style={styles.serviceThumb} />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+        )}
+        {hasUnread && <View style={styles.onlineDot} />}
+      </View>
+
+      <View style={styles.rowContent}>
+        <View style={styles.rowTop}>
+          <Text
+            style={[styles.nameText, hasUnread && styles.nameTextBold]}
+            numberOfLines={1}
+          >
+            {otherName}
+          </Text>
+          <Text style={styles.timeText}>
+            {formatRelativeTime(item.last_message_at)}
+          </Text>
+        </View>
+        <Text style={styles.serviceTitle} numberOfLines={1}>
+          {item.service?.title ?? "Service"}
+        </Text>
+        <View style={styles.rowBottom}>
+          <Text
+            style={[styles.previewText, hasUnread && styles.previewTextBold]}
+            numberOfLines={1}
+          >
+            {preview}
+          </Text>
+          {hasUnread && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {item.unread_count! > 99 ? "99+" : item.unread_count}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 export default function ConversationsScreen() {
-  // Seed state from cache so the first paint is instant on revisits.
-  const [conversations, setConversations] =
-    useState<ConversationWithDetails[]>(conversationsCache);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(
-    cachedUserId,
-  );
-  // Only show the skeleton when there is truly nothing to display yet.
-  const [loading, setLoading] = useState(conversationsCache.length === 0);
+  const currentUserId = useCurrentUserId();
+  const [conversations, setConversations] = useState<
+    ConversationWithDetails[]
+  >([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { createScrollHandler } = useScrollDirection();
   const scrollHandler = useRef(createScrollHandler()).current;
-  const fetchInFlightRef = useRef(false);
+  const activeUserIdRef = useRef<string | null>(currentUserId);
+  const fetchInFlightForRef = useRef<string | null>(null);
 
-  const loadConversations = useCallback(async (silent = false) => {
-    if (silent && fetchInFlightRef.current) return;
-    fetchInFlightRef.current = true;
-    try {
-      // Never block the UI if we already have cached data.
-      if (!silent && conversationsCache.length === 0) setLoading(true);
-      const data = await fetchConversations();
-      conversationsCache = data; // update module-level cache
-      setConversations(data);
-    } catch (err) {
-      console.error("Error loading conversations:", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      fetchInFlightRef.current = false;
-    }
-  }, []);
+  useEffect(() => {
+    activeUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
+  const loadConversations = useCallback(
+    async (userId: string, silent = false) => {
+      if (silent && fetchInFlightForRef.current === userId) return;
+      fetchInFlightForRef.current = userId;
+      try {
+        // Never block the UI if we already have cached data.
+        if (!silent && !conversationsCacheMap.has(userId)) setLoading(true);
+        const data = await fetchConversations();
+        if (activeUserIdRef.current !== userId) return;
+        conversationsCacheMap.set(userId, data);
+        setConversations(data);
+      } catch (err) {
+        if (activeUserIdRef.current === userId) {
+          console.error("Error loading conversations:", err);
+        }
+      } finally {
+        if (activeUserIdRef.current === userId) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        if (fetchInFlightForRef.current === userId) {
+          fetchInFlightForRef.current = null;
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
 
-    const init = async () => {
-      // Already initialized in a previous mount — just re-sync silently
-      // and re-attach the realtime subscription (it's torn down on unmount).
-      if (hasInitialized) {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return;
-        unsubscribe = subscribeToConversations(user.id, () => {
-          loadConversations(true);
-        });
-        loadConversations(true); // background sync, no spinner
-        return;
-      }
+    if (!currentUserId) {
+      setConversations([]);
+      setLoading(true);
+      setRefreshing(false);
+      return undefined;
+    }
 
-      hasInitialized = true;
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-      cachedUserId = user.id;
-      setCurrentUserId(user.id);
+    const cached = conversationsCacheMap.get(currentUserId);
+    setConversations(cached ?? []);
+    setLoading(!cached);
 
-      unsubscribe = subscribeToConversations(user.id, () => {
-        loadConversations(true);
-      });
+    unsubscribe = subscribeToConversations(currentUserId, () => {
+      loadConversations(currentUserId, true);
+    });
 
-      await loadConversations(); // first ever load — may show skeleton
-    };
+    loadConversations(currentUserId, Boolean(cached));
 
-    init();
     return () => unsubscribe?.();
-  }, [loadConversations]);
+  }, [currentUserId, loadConversations]);
 
   // Background sync whenever the screen regains focus (e.g. returning from chat).
   // Always silent — list stays visible and just patches quietly.
   useFocusEffect(
     useCallback(() => {
-      if (hasInitialized) loadConversations(true);
-    }, [loadConversations]),
+      if (currentUserId) loadConversations(currentUserId, true);
+    }, [currentUserId, loadConversations]),
   );
 
   const onRefresh = () => {
+    if (!currentUserId) return;
     setRefreshing(true);
-    loadConversations();
+    loadConversations(currentUserId);
   };
 
-  const getPreview = (msg: ConversationWithDetails["last_message"]) => {
-    if (!msg) return "No messages yet";
-    if (isImageMessage(msg.content)) return "📷 Photo";
-    return msg.content;
-  };
-
-  const renderItem = ({ item }: { item: ConversationWithDetails }) => {
-    const isUserBuyer = currentUserId === item.buyer_id;
-    const otherUser = isUserBuyer ? item.seller_profile : item.buyer_profile;
-    const otherName = formatDisplayName(otherUser ?? null, "Unknown User");
-    const initials = otherName.charAt(0).toUpperCase();
-    const hasUnread = (item.unread_count || 0) > 0;
-    const preview = getPreview(item.last_message);
-
-    return (
-      <TouchableOpacity
-        onPress={() =>
-          router.push(`/chat/${item.id}?currentUserId=${currentUserId}`)
-        }
-        style={[styles.row, hasUnread && styles.rowUnread]}
-        activeOpacity={0.7}
-      >
-        <View style={styles.avatarWrap}>
-          {item.service?.image_url ? (
-            <Image
-              source={{ uri: item.service.image_url }}
-              style={styles.serviceThumb}
-            />
-          ) : (
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-          )}
-          {hasUnread && <View style={styles.onlineDot} />}
-        </View>
-
-        <View style={styles.rowContent}>
-          <View style={styles.rowTop}>
-            <Text
-              style={[styles.nameText, hasUnread && styles.nameTextBold]}
-              numberOfLines={1}
-            >
-              {otherName}
-            </Text>
-            <Text style={styles.timeText}>
-              {formatRelativeTime(item.last_message_at)}
-            </Text>
-          </View>
-          <Text style={styles.serviceTitle} numberOfLines={1}>
-            {item.service?.title ?? "Service"}
-          </Text>
-          <View style={styles.rowBottom}>
-            <Text
-              style={[styles.previewText, hasUnread && styles.previewTextBold]}
-              numberOfLines={1}
-            >
-              {preview}
-            </Text>
-            {hasUnread && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {item.unread_count! > 99 ? "99+" : item.unread_count}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const openConversation = useCallback((id: string) => {
+    router.push(`/chat/${id}`);
+  }, []);
+  const keyExtractor = useCallback(
+    (item: ConversationWithDetails) => item.id,
+    [],
+  );
+  const renderItem = useCallback(
+    ({ item }: { item: ConversationWithDetails }) => (
+      <ConversationRow
+        item={item}
+        currentUserId={currentUserId}
+        onPress={openConversation}
+      />
+    ),
+    [currentUserId, openConversation],
+  );
+  const getItemLayout = useCallback(
+    (_: ArrayLike<ConversationWithDetails> | null | undefined, index: number) => ({
+      length: 77,
+      offset: 77 * index,
+      index,
+    }),
+    [],
+  );
 
   if (loading) {
     return <ConversationsScreenSkeleton />;
@@ -213,11 +239,13 @@ export default function ConversationsScreen() {
           </View>
         ) : (
           <FlatList
+            {...VERTICAL_LIST_PROPS}
             onScroll={scrollHandler}
             scrollEventThrottle={16}
             data={conversations}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             renderItem={renderItem}
+            getItemLayout={getItemLayout}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}

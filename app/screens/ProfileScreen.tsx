@@ -30,7 +30,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Image,
   Modal,
   RefreshControl,
   ScrollView,
@@ -42,6 +41,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   fetchUserServices,
+  invalidateServicesCache,
   updateServiceStatus,
 } from "../../lib/api/services.api";
 import {
@@ -56,6 +56,7 @@ import {
   ProfileScreenSkeleton,
   SkeletonBox,
 } from "../../lib/components/SkeletonLoader";
+import { CachedImage } from "../../lib/components/ui/CachedImage";
 import { FormField } from "../../lib/components/ui/FormField";
 import { ProfileAvatar } from "../../lib/components/ui/ProfileAvatar";
 import { TabBar } from "../../lib/components/ui/TabBar";
@@ -95,8 +96,10 @@ async function handleLogout() {
 
 export default function ProfileScreen({
   onVerified,
+  refreshKey,
 }: {
   onVerified?: () => void;
+  refreshKey?: number;
 }) {
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -122,6 +125,8 @@ export default function ProfileScreen({
 
   const subscriptionsLoadedRef = useRef(false);
   const reviewsLoadedRef = useRef(false);
+  const servicesLoadedRef = useRef(false);
+  const lastRefreshKeyRef = useRef(refreshKey);
   const actionSheetSlide = useRef(new Animated.Value(0)).current;
   const actionSheetBackdrop = useRef(new Animated.Value(0)).current;
 
@@ -145,12 +150,13 @@ export default function ProfileScreen({
     setProfileLoading(false);
   }, []);
 
-  const loadServices = useCallback(async () => {
+  const loadServices = useCallback(async (force = false) => {
     if (!currentUserId) return;
-    setLoadingServices(true);
+    if (!servicesLoadedRef.current) setLoadingServices(true);
     try {
-      const data = await fetchUserServices(currentUserId);
+      const data = await fetchUserServices(currentUserId, { force });
       setServices(data.filter((s) => s.status !== "deleted"));
+      servicesLoadedRef.current = true;
     } catch (e) {
       console.error(e);
     } finally {
@@ -207,7 +213,7 @@ export default function ProfileScreen({
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProfile();
-    if (activeTab === "posts") await loadServices();
+    if (activeTab === "posts") await loadServices(true);
     else if (activeTab === "subscriptions") {
       subscriptionsLoadedRef.current = true;
       await loadSubscriptions();
@@ -217,6 +223,15 @@ export default function ProfileScreen({
     }
     setRefreshing(false);
   }, [activeTab, loadProfile, loadServices, loadSubscriptions, loadReviews]);
+
+  useEffect(() => {
+    if (refreshKey == null || lastRefreshKeyRef.current === refreshKey) {
+      return;
+    }
+
+    lastRefreshKeyRef.current = refreshKey;
+    onRefresh();
+  }, [onRefresh, refreshKey]);
 
   // ── Profile image update ───────────────────────────────────────────────────
 
@@ -339,10 +354,12 @@ export default function ProfileScreen({
                   .from("services")
                   .update({ status: "deleted" })
                   .eq("id", captured.id);
-                if (!error)
+                if (!error) {
+                  invalidateServicesCache();
                   setServices((prev) =>
                     prev.filter((s) => s.id !== captured.id),
                   );
+                }
               },
             },
           ],
@@ -985,6 +1002,7 @@ const EditServiceModal = ({
         .select()
         .single();
       if (error) throw error;
+      invalidateServicesCache();
       onSaved(data);
       Alert.alert("Saved!", "Your service has been updated.");
     } catch {
@@ -1021,13 +1039,9 @@ const EditServiceModal = ({
             style={{ height: 160 }}
           >
             {form.selectedImage || service.image_url ? (
-              <Image
-                source={{
-                  uri:
-                    form.selectedImage?.uri ?? service.image_url ?? undefined,
-                }}
-                className="w-full h-full"
-                resizeMode="cover"
+              <CachedImage
+                uri={form.selectedImage?.uri ?? service.image_url ?? undefined}
+                style={{ width: "100%", height: "100%" }}
               />
             ) : (
               <View className="flex-1 items-center justify-center">

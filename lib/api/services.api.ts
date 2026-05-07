@@ -4,6 +4,95 @@ import { ServiceWithDetails } from "../types/database.types";
 import { UserLocation } from "../types/filter.types";
 import { supabase } from "./supabase";
 
+type FetchOptions = {
+  force?: boolean;
+};
+
+type CacheEntry<T> = {
+  data: T;
+  timestamp: number;
+};
+
+type SearchAndFilterParams = {
+  searchQuery?: string;
+  categoryId?: string | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  minRating?: number | null;
+  location?: string;
+  sortBy?: "newest" | "price_low" | "price_high" | "rating_high" | "nearest";
+  userLocation?: UserLocation;
+  limit?: number;
+  page?: number;
+};
+
+const SERVICE_CACHE_TTL_MS = 60 * 1000;
+const serviceCache = new Map<string, CacheEntry<unknown>>();
+const pendingServiceRequests = new Map<string, Promise<unknown>>();
+let serviceCacheVersion = 0;
+
+function getSearchAndFilterCacheKey(params: SearchAndFilterParams) {
+  const userLocation = params.userLocation
+    ? {
+        latitude: Number(params.userLocation.latitude.toFixed(5)),
+        longitude: Number(params.userLocation.longitude.toFixed(5)),
+      }
+    : null;
+
+  return JSON.stringify({
+    type: "searchAndFilter",
+    searchQuery: params.searchQuery?.trim() ?? "",
+    categoryId: params.categoryId ?? null,
+    minPrice: params.minPrice ?? null,
+    maxPrice: params.maxPrice ?? null,
+    minRating: params.minRating ?? null,
+    location: params.location?.trim() ?? "",
+    sortBy: params.sortBy ?? "newest",
+    userLocation,
+    limit: params.limit ?? null,
+    page: params.page ?? 0,
+  });
+}
+
+async function withServicesCache<T>(
+  key: string,
+  options: FetchOptions,
+  fetcher: () => Promise<T>,
+): Promise<T> {
+  if (!options.force) {
+    const cached = serviceCache.get(key) as CacheEntry<T> | undefined;
+    if (cached && Date.now() - cached.timestamp < SERVICE_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    const pending = pendingServiceRequests.get(key) as Promise<T> | undefined;
+    if (pending) return pending;
+  }
+
+  const cacheVersion = serviceCacheVersion;
+  const request = fetcher()
+    .then((data) => {
+      if (cacheVersion === serviceCacheVersion) {
+        serviceCache.set(key, { data, timestamp: Date.now() });
+      }
+      return data;
+    })
+    .finally(() => {
+      if (pendingServiceRequests.get(key) === request) {
+        pendingServiceRequests.delete(key);
+      }
+    });
+
+  pendingServiceRequests.set(key, request);
+  return request;
+}
+
+export function invalidateServicesCache() {
+  serviceCacheVersion += 1;
+  serviceCache.clear();
+  pendingServiceRequests.clear();
+}
+
 // ── Haversine distance (km) between two lat/lng points ────────────────────────
 export function haversineDistance(
   lat1: number,
@@ -26,30 +115,34 @@ export function haversineDistance(
  * Fetch all active services from Supabase
  * Includes related category and profile data
  */
-export async function fetchServices(): Promise<ServiceWithDetails[]> {
-  try {
-    const { data, error } = await supabase
-      .from("services")
-      .select(
-        `
-        *,
-        category:categories(*),
-        profile:profiles(*)
-      `,
-      )
-      .eq("status", "active")
-      .order("created_at", { ascending: false });
+export async function fetchServices(
+  options: FetchOptions = {},
+): Promise<ServiceWithDetails[]> {
+  return withServicesCache("services:active", options, async () => {
+    try {
+      const { data, error } = await supabase
+        .from("services")
+        .select(
+          `
+          *,
+          category:categories(*),
+          profile:profiles(*)
+        `,
+        )
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching services:", error);
+      if (error) {
+        console.error("Error fetching services:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("Failed to fetch services:", error);
       throw error;
     }
-
-    return data || [];
-  } catch (error) {
-    console.error("Failed to fetch services:", error);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -57,31 +150,34 @@ export async function fetchServices(): Promise<ServiceWithDetails[]> {
  */
 export async function fetchServicesByCategory(
   categoryId: string,
+  options: FetchOptions = {},
 ): Promise<ServiceWithDetails[]> {
-  try {
-    const { data, error } = await supabase
-      .from("services")
-      .select(
-        `
-        *,
-        category:categories(*),
-        profile:profiles(*)
-      `,
-      )
-      .eq("status", "active")
-      .eq("category_id", categoryId)
-      .order("created_at", { ascending: false });
+  return withServicesCache(`services:category:${categoryId}`, options, async () => {
+    try {
+      const { data, error } = await supabase
+        .from("services")
+        .select(
+          `
+          *,
+          category:categories(*),
+          profile:profiles(*)
+        `,
+        )
+        .eq("status", "active")
+        .eq("category_id", categoryId)
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching services by category:", error);
+      if (error) {
+        console.error("Error fetching services by category:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("Failed to fetch services by category:", error);
       throw error;
     }
-
-    return data || [];
-  } catch (error) {
-    console.error("Failed to fetch services by category:", error);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -120,30 +216,33 @@ export async function fetchServiceById(
  */
 export async function fetchUserServices(
   userId: string,
+  options: FetchOptions = {},
 ): Promise<ServiceWithDetails[]> {
-  try {
-    const { data, error } = await supabase
-      .from("services")
-      .select(
-        `
-        *,
-        category:categories(*),
-        profile:profiles(*)
-      `,
-      )
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+  return withServicesCache(`services:user:${userId}`, options, async () => {
+    try {
+      const { data, error } = await supabase
+        .from("services")
+        .select(
+          `
+          *,
+          category:categories(*),
+          profile:profiles(*)
+        `,
+        )
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching user services:", error);
+      if (error) {
+        console.error("Error fetching user services:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("Failed to fetch user services:", error);
       throw error;
     }
-
-    return data || [];
-  } catch (error) {
-    console.error("Failed to fetch user services:", error);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -205,35 +304,39 @@ export async function fetchCategories() {
  * A service is boosted when boosted_until is set and still in the future.
  * premium tier comes before standard; within same tier ordered by boosted_until desc.
  */
-export async function fetchBoostedServices(): Promise<ServiceWithDetails[]> {
-  try {
-    const now = new Date().toISOString();
-    const { data, error } = await supabase
-      .from("services")
-      .select(
-        `
-        *,
-        category:categories(*),
-        profile:profiles(*)
-      `,
-      )
-      .eq("status", "active")
-      .not("boosted_until", "is", null)
-      .gt("boosted_until", now)
-      // premium (p) sorts before standard (s) alphabetically
-      .order("boost_tier", { ascending: true, nullsFirst: false })
-      .order("boosted_until", { ascending: false });
+export async function fetchBoostedServices(
+  options: FetchOptions = {},
+): Promise<ServiceWithDetails[]> {
+  return withServicesCache("services:boosted", options, async () => {
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("services")
+        .select(
+          `
+          *,
+          category:categories(*),
+          profile:profiles(*)
+        `,
+        )
+        .eq("status", "active")
+        .not("boosted_until", "is", null)
+        .gt("boosted_until", now)
+        // premium (p) sorts before standard (s) alphabetically
+        .order("boost_tier", { ascending: true, nullsFirst: false })
+        .order("boosted_until", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching boosted services:", error);
+      if (error) {
+        console.error("Error fetching boosted services:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("Failed to fetch boosted services:", error);
       throw error;
     }
-
-    return data || [];
-  } catch (error) {
-    console.error("Failed to fetch boosted services:", error);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -295,46 +398,50 @@ function computeEditorsScore(service: ServiceWithDetails): number {
  * Only considers services with at least 1 review to prevent brand-new listings
  * from occupying the Featured slot with zero social proof.
  */
-export async function fetchEditorsPick(): Promise<ServiceWithDetails | null> {
-  try {
-    // Fetch candidates: active, has at least 1 review, top 50 by rating
-    // We limit to 50 to avoid scoring hundreds of services client-side
-    const { data, error } = await supabase
-      .from("services")
-      .select(
-        `
-        *,
-        category:categories(*),
-        profile:profiles(*)
-      `,
-      )
-      .eq("status", "active")
-      .gt("review_count", 0)
-      .order("rating", { ascending: false })
-      .limit(50);
+export async function fetchEditorsPick(
+  options: FetchOptions = {},
+): Promise<ServiceWithDetails | null> {
+  return withServicesCache("services:editors-pick", options, async () => {
+    try {
+      // Fetch candidates: active, has at least 1 review, top 50 by rating
+      // We limit to 50 to avoid scoring hundreds of services client-side
+      const { data, error } = await supabase
+        .from("services")
+        .select(
+          `
+          *,
+          category:categories(*),
+          profile:profiles(*)
+        `,
+        )
+        .eq("status", "active")
+        .gt("review_count", 0)
+        .order("rating", { ascending: false })
+        .limit(50);
 
-    if (error) {
-      console.error("Error fetching editor's pick candidates:", error);
-      throw error;
+      if (error) {
+        console.error("Error fetching editor's pick candidates:", error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) return null;
+
+      // Score each candidate and pick the highest
+      const scored = data.map((s) => ({
+        service: {
+          ...s,
+          _editorsScore: computeEditorsScore(s),
+        } as ServiceWithDetails,
+        score: computeEditorsScore(s),
+      }));
+
+      scored.sort((a, b) => b.score - a.score);
+      return scored[0].service;
+    } catch (error) {
+      console.error("Failed to fetch editor's pick:", error);
+      return null;
     }
-
-    if (!data || data.length === 0) return null;
-
-    // Score each candidate and pick the highest
-    const scored = data.map((s) => ({
-      service: {
-        ...s,
-        _editorsScore: computeEditorsScore(s),
-      } as ServiceWithDetails,
-      score: computeEditorsScore(s),
-    }));
-
-    scored.sort((a, b) => b.score - a.score);
-    return scored[0].service;
-  } catch (error) {
-    console.error("Failed to fetch editor's pick:", error);
-    return null;
-  }
+  });
 }
 
 /**
@@ -342,120 +449,138 @@ export async function fetchEditorsPick(): Promise<ServiceWithDetails | null> {
  * Supports search query, category, price range, rating, location, and sorting.
  * When sortBy is "nearest", results are sorted client-side by distance from userLocation.
  */
-export async function searchAndFilterServices(params: {
-  searchQuery?: string;
-  categoryId?: string | null;
-  minPrice?: number | null;
-  maxPrice?: number | null;
-  minRating?: number | null;
-  location?: string;
-  sortBy?: "newest" | "price_low" | "price_high" | "rating_high" | "nearest";
-  userLocation?: UserLocation;
-}): Promise<ServiceWithDetails[]> {
-  try {
-    let query = supabase
-      .from("services")
-      .select(
-        `
-        *,
-        category:categories(*),
-        profile:profiles(*)
-      `,
-      )
-      .eq("status", "active");
+export async function searchAndFilterServices(
+  params: SearchAndFilterParams,
+  options: FetchOptions = {},
+): Promise<ServiceWithDetails[]> {
+  return withServicesCache(
+    getSearchAndFilterCacheKey(params),
+    options,
+    async () => {
+      try {
+        let query = supabase
+          .from("services")
+          .select(
+            `
+            *,
+            category:categories(*),
+            profile:profiles(*)
+          `,
+          )
+          .eq("status", "active");
 
-    // Apply search query (title, description, or tags)
-    if (params.searchQuery && params.searchQuery.trim()) {
-      query = query.or(
-        `title.ilike.%${params.searchQuery}%,description.ilike.%${params.searchQuery}%,tags.cs.{${params.searchQuery}}`,
-      );
-    }
+        // Apply search query (title, description, or tags)
+        if (params.searchQuery && params.searchQuery.trim()) {
+          query = query.or(
+            `title.ilike.%${params.searchQuery}%,description.ilike.%${params.searchQuery}%,tags.cs.{${params.searchQuery}}`,
+          );
+        }
 
-    // Filter by category
-    if (params.categoryId) {
-      query = query.eq("category_id", params.categoryId);
-    }
+        // Filter by category
+        if (params.categoryId) {
+          query = query.eq("category_id", params.categoryId);
+        }
 
-    // Filter by minimum price
-    if (params.minPrice !== null && params.minPrice !== undefined) {
-      query = query.gte("price", params.minPrice);
-    }
+        // Filter by minimum price
+        if (params.minPrice !== null && params.minPrice !== undefined) {
+          query = query.gte("price", params.minPrice);
+        }
 
-    // Filter by maximum price
-    if (params.maxPrice !== null && params.maxPrice !== undefined) {
-      query = query.lte("price", params.maxPrice);
-    }
+        // Filter by maximum price
+        if (params.maxPrice !== null && params.maxPrice !== undefined) {
+          query = query.lte("price", params.maxPrice);
+        }
 
-    // Filter by minimum rating
-    if (params.minRating !== null && params.minRating !== undefined) {
-      query = query.gte("rating", params.minRating);
-    }
+        // Filter by minimum rating
+        if (params.minRating !== null && params.minRating !== undefined) {
+          query = query.gte("rating", params.minRating);
+        }
 
-    // Filter by location (partial match)
-    if (params.location && params.location.trim()) {
-      query = query.ilike("location", `%${params.location}%`);
-    }
+        // Filter by location (partial match)
+        if (params.location && params.location.trim()) {
+          query = query.ilike("location", `%${params.location}%`);
+        }
 
-    // Apply Supabase-side sorting (skip for nearest — handled client-side below)
-    if (params.sortBy !== "nearest") {
-      switch (params.sortBy) {
-        case "price_low":
-          query = query.order("price", { ascending: true, nullsFirst: false });
-          break;
-        case "price_high":
-          query = query.order("price", { ascending: false, nullsFirst: false });
-          break;
-        case "rating_high":
-          query = query.order("rating", { ascending: false });
-          break;
-        case "newest":
-        default:
-          query = query.order("created_at", { ascending: false });
-          break;
+        // Apply Supabase-side sorting (skip for nearest — handled client-side below)
+        if (params.sortBy !== "nearest") {
+          switch (params.sortBy) {
+            case "price_low":
+              query = query.order("price", {
+                ascending: true,
+                nullsFirst: false,
+              });
+              break;
+            case "price_high":
+              query = query.order("price", {
+                ascending: false,
+                nullsFirst: false,
+              });
+              break;
+            case "rating_high":
+              query = query.order("rating", { ascending: false });
+              break;
+            case "newest":
+            default:
+              query = query.order("created_at", { ascending: false });
+              break;
+          }
+        }
+
+        if (params.sortBy !== "nearest" && params.limit && params.limit > 0) {
+          const page = params.page ?? 0;
+          const from = page * params.limit;
+          query = query.range(from, from + params.limit - 1);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error("Error searching and filtering services:", error);
+          throw error;
+        }
+
+        let results: ServiceWithDetails[] = data || [];
+
+        // Client-side distance sort when "nearest" is selected
+        if (params.sortBy === "nearest" && params.userLocation) {
+          const { latitude: uLat, longitude: uLng } = params.userLocation;
+
+          // Attach distance to each result, push nulls to end
+          const withDistance = results.map((s) => ({
+            service: s,
+            distance:
+              s.latitude != null && s.longitude != null
+                ? haversineDistance(uLat, uLng, s.latitude, s.longitude)
+                : null,
+          }));
+
+          withDistance.sort((a, b) => {
+            if (a.distance === null && b.distance === null) return 0;
+            if (a.distance === null) return 1;
+            if (b.distance === null) return -1;
+            return a.distance - b.distance;
+          });
+
+          results = withDistance.map((item) => ({
+            ...item.service,
+            // Attach computed distance for display in the UI
+            _distanceKm: item.distance,
+          })) as ServiceWithDetails[];
+        }
+
+        if (params.sortBy === "nearest" && params.limit && params.limit > 0) {
+          const page = params.page ?? 0;
+          const from = page * params.limit;
+          return results.slice(from, from + params.limit);
+        }
+
+        return results;
+      } catch (error) {
+        console.error("Failed to search and filter services:", error);
+        throw error;
       }
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Error searching and filtering services:", error);
-      throw error;
-    }
-
-    let results: ServiceWithDetails[] = data || [];
-
-    // Client-side distance sort when "nearest" is selected
-    if (params.sortBy === "nearest" && params.userLocation) {
-      const { latitude: uLat, longitude: uLng } = params.userLocation;
-
-      // Attach distance to each result, push nulls to end
-      const withDistance = results.map((s) => ({
-        service: s,
-        distance:
-          s.latitude != null && s.longitude != null
-            ? haversineDistance(uLat, uLng, s.latitude, s.longitude)
-            : null,
-      }));
-
-      withDistance.sort((a, b) => {
-        if (a.distance === null && b.distance === null) return 0;
-        if (a.distance === null) return 1;
-        if (b.distance === null) return -1;
-        return a.distance - b.distance;
-      });
-
-      results = withDistance.map((item) => ({
-        ...item.service,
-        // Attach computed distance for display in the UI
-        _distanceKm: item.distance,
-      })) as ServiceWithDetails[];
-    }
-
-    return results;
-  } catch (error) {
-    console.error("Failed to search and filter services:", error);
-    throw error;
-  }
+    },
+  );
 }
 
 /**
@@ -479,6 +604,7 @@ export async function updateServiceStatus(
       throw error;
     }
 
+    invalidateServicesCache();
     return data;
   } catch (error) {
     console.error("Failed to update service status:", error);
@@ -526,6 +652,7 @@ export async function updateServiceStatusRPC(
     }
 
     console.log("Service updated successfully:", data);
+    invalidateServicesCache();
     return data;
   } catch (error) {
     console.error("Failed to update service status via RPC:", error);
@@ -555,6 +682,7 @@ export async function boostService(
     console.error("Error boosting service:", error);
     throw error;
   }
+  invalidateServicesCache();
 }
 
 /**
@@ -568,4 +696,5 @@ export async function cancelServiceBoost(serviceId: string): Promise<void> {
     console.error("Error cancelling boost:", error);
     throw error;
   }
+  invalidateServicesCache();
 }

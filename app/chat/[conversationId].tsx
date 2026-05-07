@@ -6,7 +6,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -25,6 +24,8 @@ import {
   subscribeToMessages,
 } from "../../lib/api/messaging.api";
 import { supabase } from "../../lib/api/supabase";
+import { CachedImage } from "../../lib/components/ui/CachedImage";
+import { CHAT_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
 import { MessageWithSender } from "../../lib/types/database.types";
@@ -46,38 +47,39 @@ type ConversationDetails = {
   seller?: { first_name: string; last_name: string | null };
 };
 
-// Module-level cache keyed by conversationId — survives navigation.
+// Module-level cache keyed by userId + conversationId — survives navigation
+// without reusing another signed-in account's "own message" perspective.
 const messagesCacheMap = new Map<string, LocalMessage[]>();
 const detailsCacheMap = new Map<string, ConversationDetails>();
 
 export default function ChatScreen() {
-  const { conversationId, currentUserId: userIdParam } = useLocalSearchParams<{
+  const { conversationId } = useLocalSearchParams<{
     conversationId: string;
-    currentUserId: string;
   }>();
 
-  // Use the param passed from ConversationsScreen for instant availability.
-  // Fall back to the hook for direct/deep-link navigation.
-  const hookUserId = useCurrentUserId();
-  const currentUserId = userIdParam || hookUserId;
+  const currentUserId = useCurrentUserId();
+  const cacheKey =
+    currentUserId && conversationId
+      ? `${currentUserId}:${conversationId}`
+      : null;
 
-  const cachedMessages = messagesCacheMap.get(conversationId) ?? [];
-  const cachedDetails = detailsCacheMap.get(conversationId) ?? null;
-
-  // Seed state from cache — instant render on revisit.
-  const [messages, setMessages] = useState<LocalMessage[]>(cachedMessages);
+  const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [conversationDetails, setConversationDetails] =
-    useState<ConversationDetails | null>(cachedDetails);
-  // Only show spinner when there's genuinely nothing cached to show.
-  const [loading, setLoading] = useState(cachedMessages.length === 0);
+    useState<ConversationDetails | null>(null);
+  const [loading, setLoading] = useState(true);
   const [messageText, setMessageText] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const activeCacheKeyRef = useRef<string | null>(cacheKey);
   const insets = useSafeAreaInsets();
 
-  const scrollToBottom = (animated = true) => {
+  const scrollToBottom = useCallback((animated = true) => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 80);
-  };
+  }, []);
+
+  useEffect(() => {
+    activeCacheKeyRef.current = cacheKey;
+  }, [cacheKey]);
 
   const loadConversationDetails = useCallback(async () => {
     try {
@@ -98,34 +100,37 @@ export default function ChatScreen() {
         .single();
 
       if (error) throw error;
+      if (!cacheKey || activeCacheKeyRef.current !== cacheKey) return;
       const details = data as unknown as ConversationDetails;
-      detailsCacheMap.set(conversationId, details);
+      detailsCacheMap.set(cacheKey, details);
       setConversationDetails(details);
     } catch (err) {
       console.error("Error loading conversation details:", err);
     }
-  }, [conversationId]);
+  }, [cacheKey, conversationId]);
 
   const loadMessages = useCallback(async () => {
     try {
+      if (!cacheKey) return;
       const data = await fetchMessages(conversationId);
       const fresh = data.map((m) => ({ ...m, _status: "sent" as const }));
+      if (activeCacheKeyRef.current !== cacheKey) return;
 
       // Only update if something actually changed — avoids unnecessary re-renders.
-      const cached = messagesCacheMap.get(conversationId);
+      const cached = messagesCacheMap.get(cacheKey);
       const lastCachedId = cached?.[cached.length - 1]?.id;
       const lastFreshId = fresh[fresh.length - 1]?.id;
       if (fresh.length !== cached?.length || lastFreshId !== lastCachedId) {
-        messagesCacheMap.set(conversationId, fresh);
+        messagesCacheMap.set(cacheKey, fresh);
         setMessages(fresh);
         scrollToBottom(false);
       }
     } catch (err) {
       console.error("Error loading messages:", err);
     } finally {
-      setLoading(false);
+      if (activeCacheKeyRef.current === cacheKey) setLoading(false);
     }
-  }, [conversationId]);
+  }, [cacheKey, conversationId, scrollToBottom]);
 
   const markAsRead = useCallback(async () => {
     try {
@@ -136,6 +141,20 @@ export default function ChatScreen() {
   }, [conversationId]);
 
   useEffect(() => {
+    if (!currentUserId || !cacheKey) {
+      setMessages([]);
+      setConversationDetails(null);
+      setLoading(true);
+      return undefined;
+    }
+
+    const hasCachedMessages = messagesCacheMap.has(cacheKey);
+    const cachedMessages = messagesCacheMap.get(cacheKey) ?? [];
+    const cachedDetails = detailsCacheMap.get(cacheKey) ?? null;
+    setMessages(cachedMessages);
+    setConversationDetails(cachedDetails);
+    setLoading(!hasCachedMessages);
+
     // If we have cached messages, scroll to bottom immediately.
     if (cachedMessages.length > 0) scrollToBottom(false);
 
@@ -170,7 +189,7 @@ export default function ChatScreen() {
         }
 
         // Keep cache in sync with realtime updates too.
-        messagesCacheMap.set(conversationId, next);
+        messagesCacheMap.set(cacheKey, next);
         return next;
       });
 
@@ -179,18 +198,19 @@ export default function ChatScreen() {
     });
 
     return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    cacheKey,
     conversationId,
+    currentUserId,
     loadConversationDetails,
     loadMessages,
     markAsRead,
-    currentUserId,
+    scrollToBottom,
   ]);
 
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     const text = messageText.trim();
-    if (!text || !currentUserId) return;
+    if (!text || !currentUserId || !cacheKey) return;
     setMessageText("");
 
     const localId = `local_${Date.now()}`;
@@ -207,7 +227,7 @@ export default function ChatScreen() {
 
     setMessages((prev) => {
       const next = [...prev, optimistic];
-      messagesCacheMap.set(conversationId, next);
+      messagesCacheMap.set(cacheKey, next);
       return next;
     });
     scrollToBottom();
@@ -221,9 +241,10 @@ export default function ChatScreen() {
         ),
       );
     }
-  };
+  }, [cacheKey, conversationId, currentUserId, messageText, scrollToBottom]);
 
-  const handlePickImage = async () => {
+  const handlePickImage = useCallback(async () => {
+    if (!currentUserId || !cacheKey) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.8,
@@ -239,7 +260,7 @@ export default function ChatScreen() {
       id: localId,
       _localId: localId,
       conversation_id: conversationId,
-      sender_id: currentUserId!,
+      sender_id: currentUserId,
       content: `${IMAGE_MESSAGE_PREFIX}${asset.uri}`,
       is_read: false,
       created_at: new Date().toISOString(),
@@ -248,7 +269,7 @@ export default function ChatScreen() {
 
     setMessages((prev) => {
       const next = [...prev, optimistic];
-      messagesCacheMap.set(conversationId, next);
+      messagesCacheMap.set(cacheKey, next);
       return next;
     });
     scrollToBottom();
@@ -278,9 +299,10 @@ export default function ChatScreen() {
     } finally {
       setUploadingImage(false);
     }
-  };
+  }, [cacheKey, conversationId, currentUserId, scrollToBottom]);
 
-  const handleRetry = async (msg: LocalMessage) => {
+  const handleRetry = useCallback(async (msg: LocalMessage) => {
+    if (!cacheKey) return;
     setMessages((prev) =>
       prev.map((m) =>
         m._localId === msg._localId ? { ...m, _status: "sending" } : m,
@@ -298,9 +320,9 @@ export default function ChatScreen() {
         ),
       );
     }
-  };
+  }, [cacheKey, conversationId]);
 
-  const renderMessage = ({
+  const renderMessage = useCallback(({
     item,
     index,
   }: {
@@ -330,10 +352,9 @@ export default function ChatScreen() {
                 item._status === "failed" && styles.bubbleFailed,
               ]}
             >
-              <Image
-                source={{ uri: imgUrl }}
+              <CachedImage
+                uri={imgUrl}
                 style={styles.chatImage}
-                resizeMode="cover"
               />
               {item._status === "sending" && (
                 <View style={styles.imageLoadingOverlay}>
@@ -377,7 +398,12 @@ export default function ChatScreen() {
         </View>
       </View>
     );
-  };
+  }, [currentUserId, handleRetry, messages]);
+
+  const messageKeyExtractor = useCallback(
+    (item: LocalMessage, idx: number) => item.id || `msg-${idx}`,
+    [],
+  );
 
   const getHeaderTitle = () => {
     if (!conversationDetails) return "Chat";
@@ -417,9 +443,10 @@ export default function ChatScreen() {
       </View>
 
       <FlatList
+        {...CHAT_LIST_PROPS}
         ref={flatListRef}
         data={messages}
-        keyExtractor={(item, idx) => item.id || `msg-${idx}`}
+        keyExtractor={messageKeyExtractor}
         renderItem={renderMessage}
         contentContainerStyle={styles.messagesList}
         onContentSizeChange={() => scrollToBottom(false)}

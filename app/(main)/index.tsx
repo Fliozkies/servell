@@ -162,13 +162,13 @@ export default function MainScreen() {
           }}
         >
           <ServicesScreen
-            key={servicesRefreshKey}
             searchQuery=""
             filterModalVisible={filterModalVisible}
             onFilterModalClose={() => setFilterModalVisible(false)}
             filters={effectiveFilters}
             onFiltersChange={setFilters}
             effectiveUserLocation={effectiveUserLocation}
+            refreshKey={servicesRefreshKey}
           />
         </View>
 
@@ -207,14 +207,18 @@ export default function MainScreen() {
           }}
         >
           <ProfileScreen
-            key={profileRefreshKey}
             onVerified={() => setIsVerified(true)}
+            refreshKey={profileRefreshKey}
           />
         </View>
 
         {activeTab === "Post" && (
           <CreateServiceScreen
-            onServiceCreated={() => setActiveTab("Services")}
+            onServiceCreated={() => {
+              setServicesRefreshKey((prev) => prev + 1);
+              setProfileRefreshKey((prev) => prev + 1);
+              setActiveTab("Services");
+            }}
             onCancel={() => setActiveTab("Services")}
           />
         )}
