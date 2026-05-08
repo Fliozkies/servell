@@ -1,7 +1,6 @@
 // app/screens/ProfileScreen.tsx
 // Previously: app/juarez_app/pages/Profile_page.tsx
 import { AntDesign } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import {
   AlertCircle,
@@ -73,6 +72,12 @@ import {
 } from "../../lib/types/database.types";
 import { formatDisplayName, formatPrice } from "../../lib/utils/format";
 import { uploadImage } from "../../lib/utils/imageUtils";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  getNotificationPreferences,
+  NotificationPreferences,
+  saveNotificationPreferences as persistNotificationPreferences,
+} from "../../lib/utils/notificationPreferences";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1159,68 +1164,37 @@ const SettingsModal = ({
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [saving, setSaving] = useState(false);
 
-  // Notification preferences state
-  const [notifMessages, setNotifMessages] = useState(true);
-  const [notifReviews, setNotifReviews] = useState(true);
-  const [notifComments, setNotifComments] = useState(true);
-  const [notifSubscriptions, setNotifSubscriptions] = useState(true);
-  const [notifServiceUpdates, setNotifServiceUpdates] = useState(true);
+  const [notificationPreferences, setNotificationPreferences] =
+    useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
 
-  // Load notification preferences from AsyncStorage on mount
   useEffect(() => {
-    loadNotificationPreferences();
+    let mounted = true;
+
+    getNotificationPreferences()
+      .then((preferences) => {
+        if (mounted) setNotificationPreferences(preferences);
+      })
+      .catch((error) => {
+        console.error("Error loading notification preferences:", error);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
-  const saveNotificationPreferences = useCallback(async () => {
-    try {
-      const prefs = {
-        messages: notifMessages,
-        reviews: notifReviews,
-        comments: notifComments,
-        subscriptions: notifSubscriptions,
-        serviceUpdates: notifServiceUpdates,
-      };
-      await AsyncStorage.setItem(
-        "notification_preferences",
-        JSON.stringify(prefs),
-      );
-    } catch (error) {
-      console.error("Error saving notification preferences:", error);
-    }
-  }, [
-    notifComments,
-    notifMessages,
-    notifReviews,
-    notifServiceUpdates,
-    notifSubscriptions,
-  ]);
 
-  // Save notification preferences whenever they change
-  useEffect(() => {
-    saveNotificationPreferences();
-  }, [
-    notifMessages,
-    notifReviews,
-    notifComments,
-    notifSubscriptions,
-    notifServiceUpdates,
-    saveNotificationPreferences,
-  ]);
-
-  const loadNotificationPreferences = async () => {
-    try {
-      const stored = await AsyncStorage.getItem("notification_preferences");
-      if (stored) {
-        const prefs = JSON.parse(stored);
-        setNotifMessages(prefs.messages ?? true);
-        setNotifReviews(prefs.reviews ?? true);
-        setNotifComments(prefs.comments ?? true);
-        setNotifSubscriptions(prefs.subscriptions ?? true);
-        setNotifServiceUpdates(prefs.serviceUpdates ?? true);
-      }
-    } catch (error) {
-      console.error("Error loading notification preferences:", error);
-    }
-  };
+  const handleNotificationPreferenceToggle = useCallback(
+    (key: keyof NotificationPreferences, value: boolean) => {
+      setNotificationPreferences((prev) => {
+        const next = { ...prev, [key]: value };
+        void persistNotificationPreferences(next).catch((error) => {
+          console.error("Error saving notification preferences:", error);
+        });
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -1412,36 +1386,46 @@ const SettingsModal = ({
                 icon={<Bell size={20} color={COLORS.primary} />}
                 label="New Messages"
                 description="Get notified when you receive new messages"
-                value={notifMessages}
-                onToggle={setNotifMessages}
+                value={notificationPreferences.messages}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("messages", value)
+                }
               />
               <NotificationToggle
                 icon={<Star size={20} color="#f59e0b" />}
                 label="Reviews & Ratings"
                 description="Alerts when someone reviews your services"
-                value={notifReviews}
-                onToggle={setNotifReviews}
+                value={notificationPreferences.reviews}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("reviews", value)
+                }
               />
               <NotificationToggle
                 icon={<List size={20} color={COLORS.info} />}
                 label="Comments"
                 description="Notifications for comments on your services"
-                value={notifComments}
-                onToggle={setNotifComments}
+                value={notificationPreferences.comments}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("comments", value)
+                }
               />
               <NotificationToggle
                 icon={<Users size={20} color={COLORS.success} />}
                 label="New Followers"
                 description="Know when someone subscribes to your services"
-                value={notifSubscriptions}
-                onToggle={setNotifSubscriptions}
+                value={notificationPreferences.subscriptions}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("subscriptions", value)
+                }
               />
               <NotificationToggle
                 icon={<BarChart3 size={20} color="#8b5cf6" />}
-                label="Service Updates"
-                description="Updates about services you're following"
-                value={notifServiceUpdates}
-                onToggle={setNotifServiceUpdates}
+                label="Announcements & Updates"
+                description="Platform announcements and service updates"
+                value={notificationPreferences.serviceUpdates}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("serviceUpdates", value)
+                }
               />
             </View>
           )}
