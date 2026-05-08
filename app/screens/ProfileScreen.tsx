@@ -385,10 +385,12 @@ export default function ProfileScreen() {
   const activeServiceCount = services.filter(
     (s) => s.status === "active",
   ).length;
+  const reviewedServices = services.filter((s) => s.review_count > 0);
   const avgRating =
-    services.length > 0
+    reviewedServices.length > 0
       ? (
-          services.reduce((sum, s) => sum + s.rating, 0) / services.length
+          reviewedServices.reduce((sum, s) => sum + s.rating, 0) /
+          reviewedServices.length
         ).toFixed(1)
       : "—";
 
