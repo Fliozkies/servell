@@ -238,27 +238,56 @@ export async function markMessagesAsRead(
 }
 
 /**
- * Subscribe to new messages in a conversation (realtime)
+ * Call once at app startup after session is established.
+ * Sets the realtime JWT so private broadcast channels work immediately
+ * without async delay inside each subscription.
+ */
+export async function initRealtimeAuth(): Promise<void> {
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      await supabase.realtime.setAuth(session.access_token);
+    }
+  } catch (err) {
+    console.warn("[initRealtimeAuth] failed:", err);
+  }
+}
+
+/**
+ * Subscribe to new messages in a conversation using Supabase Realtime Broadcast.
+ *
+ * Requires initRealtimeAuth() to have been called once at app startup
+ * before any chat screen is opened — so the JWT is already set when
+ * the private channel handshake occurs synchronously here.
  */
 export function subscribeToMessages(
   conversationId: string,
   callback: (message: Message) => void,
-) {
+): () => void {
   const channel = supabase
-    .channel(`messages:${conversationId}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "INSERT",
-        schema: "public",
-        table: "messages",
-        filter: `conversation_id=eq.${conversationId}`,
+    .channel(`messages:${conversationId}`, {
+      config: {
+        private: true,
+        broadcast: { self: false },
       },
-      (payload) => {
-        callback(payload.new as Message);
-      },
-    )
-    .subscribe();
+    })
+    .on("broadcast", { event: "*" }, (payload) => {
+      const record = payload?.payload?.record;
+      if (record) callback(record as Message);
+    })
+    .subscribe((status, err) => {
+      if (err) console.error("[subscribeToMessages] subscribe error:", err);
+      // If the token expired mid-session, refresh and let the channel reconnect.
+      if (status === "CHANNEL_ERROR") {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.access_token) {
+            supabase.realtime.setAuth(session.access_token);
+          }
+        });
+      }
+    });
 
   return () => {
     supabase.removeChannel(channel);
@@ -266,7 +295,10 @@ export function subscribeToMessages(
 }
 
 /**
- * Subscribe to conversation updates (realtime)
+ * Subscribe to conversation list updates (realtime).
+ * Still uses postgres_changes here since conversations table updates
+ * (last_message_at) are lower frequency and don't need the same
+ * low-latency guarantee as individual messages.
  */
 export function subscribeToConversations(
   userId: string,

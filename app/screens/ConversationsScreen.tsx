@@ -59,7 +59,10 @@ const ConversationRow = React.memo(function ConversationRow({
     >
       <View style={styles.avatarWrap}>
         {item.service?.image_url ? (
-          <CachedImage uri={item.service.image_url} style={styles.serviceThumb} />
+          <CachedImage
+            uri={item.service.image_url}
+            style={styles.serviceThumb}
+          />
         ) : (
           <View style={styles.avatarFallback}>
             <Text style={styles.avatarText}>{initials}</Text>
@@ -105,9 +108,9 @@ const ConversationRow = React.memo(function ConversationRow({
 
 export default function ConversationsScreen() {
   const currentUserId = useCurrentUserId();
-  const [conversations, setConversations] = useState<
-    ConversationWithDetails[]
-  >([]);
+  const [conversations, setConversations] = useState<ConversationWithDetails[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { createScrollHandler } = useScrollDirection();
@@ -202,7 +205,10 @@ export default function ConversationsScreen() {
     [currentUserId, openConversation],
   );
   const getItemLayout = useCallback(
-    (_: ArrayLike<ConversationWithDetails> | null | undefined, index: number) => ({
+    (
+      _: ArrayLike<ConversationWithDetails> | null | undefined,
+      index: number,
+    ) => ({
       length: 77,
       offset: 77 * index,
       index,

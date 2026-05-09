@@ -13,6 +13,7 @@
 | id | UUID PK | → auth.users(id) CASCADE |
 | first_name | TEXT | from raw_user_meta_data |
 | last_name | TEXT | from raw_user_meta_data |
+| bio | TEXT | |
 | physis_verified | BOOL | default false |
 | profile_image_url | TEXT | stored in `profile-images` bucket |
 | location_text | TEXT | display string |

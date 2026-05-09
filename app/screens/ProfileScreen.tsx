@@ -81,7 +81,7 @@ type ProfileTab = "posts" | "subscriptions" | "reviews";
 
 const PROFILE_TABS = [
   { key: "posts" as const, label: "Services" },
-  { key: "subscriptions" as const, label: "Following" },
+  { key: "subscriptions" as const, label: "Subscriptions" },
   { key: "reviews" as const, label: "My Reviews" },
 ];
 
@@ -150,19 +150,22 @@ export default function ProfileScreen({
     setProfileLoading(false);
   }, []);
 
-  const loadServices = useCallback(async (force = false) => {
-    if (!currentUserId) return;
-    if (!servicesLoadedRef.current) setLoadingServices(true);
-    try {
-      const data = await fetchUserServices(currentUserId, { force });
-      setServices(data.filter((s) => s.status !== "deleted"));
-      servicesLoadedRef.current = true;
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingServices(false);
-    }
-  }, [currentUserId]);
+  const loadServices = useCallback(
+    async (force = false) => {
+      if (!currentUserId) return;
+      if (!servicesLoadedRef.current) setLoadingServices(true);
+      try {
+        const data = await fetchUserServices(currentUserId, { force });
+        setServices(data.filter((s) => s.status !== "deleted"));
+        servicesLoadedRef.current = true;
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoadingServices(false);
+      }
+    },
+    [currentUserId],
+  );
 
   const loadSubscriptions = useCallback(async () => {
     setLoadingSubscriptions(true);
@@ -369,7 +372,7 @@ export default function ProfileScreen({
   }, [serviceToEdit, closeActionSheet]);
 
   const handleUnsubscribe = useCallback((providerId: string, name: string) => {
-    Alert.alert("Unsubscribe", `Stop following ${name}?`, [
+    Alert.alert("Unsubscribe", `Stop subscribing to ${name}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Unsubscribe",
@@ -542,7 +545,7 @@ export default function ProfileScreen({
               ) : subscriptions.length === 0 ? (
                 <ProfileEmptyState
                   icon={<Users size={32} color={COLORS.slate400} />}
-                  title="Not following anyone"
+                  title="Not subcribed to anyone"
                   subtitle="Subscribe to service providers to stay updated."
                 />
               ) : (
@@ -912,7 +915,7 @@ const SubscriptionRow = ({
       >
         <UserMinus size={14} color={COLORS.slate500} />
         <Text className="text-xs font-medium text-slate-600 ml-1">
-          Unfollow
+          Unsubscribe
         </Text>
       </TouchableOpacity>
     </View>
@@ -973,6 +976,7 @@ const EditServiceModal = ({
   const handleSave = async () => {
     if (
       !validateServiceForm({
+        serviceType: service.latitude != null ? "physical" : "digital",
         title: form.title,
         description: form.description,
         location: form.location,
@@ -1573,7 +1577,7 @@ const SettingsModal = ({
               />
               <NotificationToggle
                 icon={<Users size={20} color={COLORS.success} />}
-                label="New Followers"
+                label="New Subscribers"
                 description="Know when someone subscribes to your services"
                 value={notifSubscriptions}
                 onToggle={setNotifSubscriptions}
@@ -1581,7 +1585,7 @@ const SettingsModal = ({
               <NotificationToggle
                 icon={<BarChart3 size={20} color="#8b5cf6" />}
                 label="Service Updates"
-                description="Updates about services you're following"
+                description="Updates about services you subscribe to"
                 value={notifServiceUpdates}
                 onToggle={setNotifServiceUpdates}
               />

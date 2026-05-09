@@ -1,10 +1,15 @@
+// lib/hooks/useServiceForm.ts
+
 import { useEffect, useState } from "react";
 import { Alert } from "react-native";
 import { fetchCategories } from "../api/services.api";
 import { Category, Service } from "../types/database.types";
 import { PickedImage, pickImage } from "../utils/imageUtils";
 
+export type ServiceType = "digital" | "physical";
+
 export interface ServiceFormState {
+  serviceType: ServiceType;
   title: string;
   description: string;
   price: string;
@@ -14,11 +19,13 @@ export interface ServiceFormState {
   phoneNumber: string;
   tags: string[];
   currentTag: string;
-  selectedImage: PickedImage | null; // now holds uri + base64 + mimeType
+  selectedImage: PickedImage | null;
   selectedCategory: string | null;
+  customCategory: string;
 }
 
 export interface ServiceFormActions {
+  setServiceType: (v: ServiceType) => void;
   setTitle: (v: string) => void;
   setDescription: (v: string) => void;
   setPrice: (v: string) => void;
@@ -27,6 +34,7 @@ export interface ServiceFormActions {
   setPhoneNumber: (v: string) => void;
   setCurrentTag: (v: string) => void;
   setSelectedCategory: (v: string | null) => void;
+  setCustomCategory: (v: string) => void;
   handleAddTag: () => void;
   handleRemoveTag: (tag: string) => void;
   handlePickImage: () => Promise<void>;
@@ -36,7 +44,9 @@ export interface ServiceFormActions {
 
 export function useServiceForm(
   initialService?: Service | null,
+  initialType: ServiceType = "digital",
 ): ServiceFormState & ServiceFormActions {
+  const [serviceType, setServiceType] = useState<ServiceType>(initialType);
   const [title, setTitle] = useState(initialService?.title ?? "");
   const [description, setDescription] = useState(
     initialService?.description ?? "",
@@ -60,6 +70,7 @@ export function useServiceForm(
   const [selectedCategory, setSelectedCategory] = useState<string | null>(
     initialService?.category_id ?? null,
   );
+  const [customCategory, setCustomCategory] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
@@ -69,6 +80,15 @@ export function useServiceForm(
       .catch(() => Alert.alert("Error", "Failed to load categories"))
       .finally(() => setLoadingCategories(false));
   }, []);
+
+  // Clear location data when switching from physical to digital
+  useEffect(() => {
+    if (serviceType === "digital") {
+      setLocation("");
+      setLatitude(null);
+      setLongitude(null);
+    }
+  }, [serviceType]);
 
   const setCoordinates = (lat: number | null, lng: number | null) => {
     setLatitude(lat);
@@ -99,6 +119,7 @@ export function useServiceForm(
   };
 
   return {
+    serviceType,
     title,
     description,
     price,
@@ -110,6 +131,8 @@ export function useServiceForm(
     currentTag,
     selectedImage,
     selectedCategory,
+    customCategory,
+    setServiceType,
     setTitle,
     setDescription,
     setPrice,
@@ -118,6 +141,7 @@ export function useServiceForm(
     setPhoneNumber,
     setCurrentTag,
     setSelectedCategory,
+    setCustomCategory,
     handleAddTag,
     handleRemoveTag,
     handlePickImage,
@@ -127,6 +151,7 @@ export function useServiceForm(
 }
 
 export function validateServiceForm(fields: {
+  serviceType: ServiceType;
   title: string;
   description: string;
   location: string;
@@ -141,12 +166,13 @@ export function validateServiceForm(fields: {
     Alert.alert("Required Field", "Please enter a description");
     return false;
   }
-  if (!fields.location.trim()) {
-    Alert.alert("Required Field", "Please enter a location");
-    return false;
-  }
   if (!fields.selectedCategory) {
     Alert.alert("Required Field", "Please select a category");
+    return false;
+  }
+  // Location is only required for physical services
+  if (fields.serviceType === "physical" && !fields.location.trim()) {
+    Alert.alert("Required Field", "Physical services require a location");
     return false;
   }
   if (fields.price.trim() && isNaN(Number(fields.price))) {
