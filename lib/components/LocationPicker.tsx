@@ -3,7 +3,7 @@
 // Location picker using OpenStreetMap Nominatim — free, no API key, no billing.
 // Supports both typing to search and tapping a point on the map.
 
-import { AntDesign, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useRef, useState } from "react";
 import {
@@ -364,11 +364,7 @@ export default function LocationPicker({
       >
         <View style={{ flex: 1 }}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setMapVisible(false)}>
-              <AntDesign name="close" size={22} color={COLORS.slate900} />
-            </TouchableOpacity>
             <Text style={styles.modalTitle}>Pick Your Location</Text>
-            <View style={{ width: 22 }} />
           </View>
 
           <View style={styles.hint}>
@@ -491,12 +487,11 @@ const styles = StyleSheet.create({
   },
   // Modal
   modalHeader: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === "ios" ? 56 : 16,
-    paddingBottom: 12,
+    paddingTop: Platform.OS === "ios" ? 64 : 36,
+    paddingBottom: 14,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
