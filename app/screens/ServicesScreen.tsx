@@ -1,21 +1,15 @@
 // app/screens/ServicesScreen.tsx
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import {
-  memo,
-  ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 // import { LinearGradient } from "expo-linear-gradient";
 import { ArrowUp } from "lucide-react-native";
 import {
   Animated,
   Dimensions,
   FlatList,
+  Image,
+  ImageBackground,
   RefreshControl,
   ScrollView,
   Text,
@@ -31,11 +25,6 @@ import AdBanner from "../../lib/components/AdBanner";
 import { BoostServiceModal } from "../../lib/components/BoostServiceModal";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { ServicesScreenSkeleton } from "../../lib/components/SkeletonLoader";
-import { CachedImage } from "../../lib/components/ui/CachedImage";
-import {
-  GRID_LIST_PROPS,
-  SMALL_LIST_PROPS,
-} from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useScrollDirection } from "../../lib/context/ScrollDirectionContext";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
@@ -46,7 +35,6 @@ import { formatPrice } from "../../lib/utils/format";
 
 const { width } = Dimensions.get("window");
 const COLUMN_WIDTH = (width - 48) / 2;
-const FILTERED_PAGE_SIZE = 20;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -57,127 +45,137 @@ function formatAuthor(service: ServiceWithDetails): string {
   return "Unknown";
 }
 
+function hasRating(service: ServiceWithDetails): boolean {
+  return service.review_count > 0 && service.rating > 0;
+}
+
+function compareTopRatedServices(
+  a: ServiceWithDetails,
+  b: ServiceWithDetails,
+): number {
+  if (b.rating !== a.rating) return b.rating - a.rating;
+  return b.review_count - a.review_count;
+}
+
 // ── Featured Card ─────────────────────────────────────────────────────────────
 
 // Shared content block used inside both the image and fallback card variants
-const FeaturedCardContent = memo(function FeaturedCardContent({
+const FeaturedCardContent = ({
   service,
   isBoosted,
 }: {
   service: ServiceWithDetails;
   isBoosted: boolean;
-}) {
-  return (
-    <View style={{ gap: 6 }}>
-      {/* Badge */}
-      <View
-        style={{
-          backgroundColor: isBoosted
-            ? "rgba(37,99,235,0.85)"
-            : "rgba(255,255,255,0.18)",
-          alignSelf: "flex-start",
-          paddingHorizontal: 10,
-          paddingVertical: 4,
-          borderRadius: 20,
-          borderWidth: 1,
-          borderColor: "rgba(255,255,255,0.3)",
-        }}
-      >
-        <Text
-          style={{
-            color: "#fff",
-            fontSize: 10,
-            fontWeight: "700",
-            letterSpacing: 0.8,
-          }}
-        >
-          {isBoosted ? "⚡ FEATURED" : "⭐ TOP PICK"}
-        </Text>
-      </View>
-
-      {/* Title */}
+}) => (
+  <View style={{ gap: 6 }}>
+    {/* Badge */}
+    <View
+      style={{
+        backgroundColor: isBoosted
+          ? "rgba(37,99,235,0.85)"
+          : "rgba(255,255,255,0.18)",
+        alignSelf: "flex-start",
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: "rgba(255,255,255,0.3)",
+      }}
+    >
       <Text
         style={{
-          fontSize: 20,
-          fontWeight: "800",
           color: "#fff",
-          lineHeight: 24,
-          textShadowColor: "rgba(0,0,0,0.6)",
+          fontSize: 10,
+          fontWeight: "700",
+          letterSpacing: 0.8,
+        }}
+      >
+        {isBoosted ? "⚡ FEATURED" : "⭐ TOP PICK"}
+      </Text>
+    </View>
+
+    {/* Title */}
+    <Text
+      style={{
+        fontSize: 24,
+        fontWeight: "900",
+        color: "#fff",
+        lineHeight: 28,
+        textShadowColor: "rgba(0,0,0,0.6)",
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+      }}
+      numberOfLines={2}
+    >
+      {service.title}
+    </Text>
+
+    {/* Author · Location */}
+    <Text
+      style={{
+        fontSize: 12,
+        color: "rgba(255,255,255,0.8)",
+        textShadowColor: "rgba(0,0,0,0.5)",
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+      }}
+      numberOfLines={1}
+    >
+      by {formatAuthor(service)}
+      {service.location ? ` · ${service.location}` : ""}
+    </Text>
+
+    {/* Price + Rating row */}
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginTop: 2,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 18,
+          fontWeight: "700",
+          color: "#fff",
+          textShadowColor: "rgba(0,0,0,0.5)",
           textShadowOffset: { width: 0, height: 1 },
           textShadowRadius: 4,
         }}
-        numberOfLines={2}
       >
-        {service.title}
+        {formatPrice(service.price)}
       </Text>
-
-      {/* Author · Location */}
-      <Text
-        style={{
-          fontSize: 12,
-          color: "rgba(255,255,255,0.8)",
-          textShadowColor: "rgba(0,0,0,0.5)",
-          textShadowOffset: { width: 0, height: 1 },
-          textShadowRadius: 3,
-        }}
-        numberOfLines={1}
-      >
-        by {formatAuthor(service)}
-        {service.location ? ` · ${service.location}` : ""}
-      </Text>
-
-      {/* Price + Rating row */}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
-          marginTop: 2,
+          gap: 4,
+          backgroundColor: "rgba(0,0,0,0.35)",
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+          borderRadius: 20,
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,0.2)",
         }}
       >
-        <Text
-          style={{
-            fontSize: 22,
-            fontWeight: "800",
-            color: "#fff",
-            textShadowColor: "rgba(0,0,0,0.5)",
-            textShadowOffset: { width: 0, height: 1 },
-            textShadowRadius: 4,
-          }}
-        >
-          {formatPrice(service.price)}
+        <Text style={{ color: "#fbbf24", fontSize: 12 }}>★</Text>
+        <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+          {service.rating.toFixed(1)}
+          {service.review_count > 0 ? ` (${service.review_count})` : ""}
         </Text>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            backgroundColor: "rgba(0,0,0,0.35)",
-            paddingHorizontal: 10,
-            paddingVertical: 5,
-            borderRadius: 20,
-            borderWidth: 1,
-            borderColor: "rgba(255,255,255,0.2)",
-          }}
-        >
-          <Text style={{ color: "#fbbf24", fontSize: 12 }}>★</Text>
-          <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
-            {service.rating.toFixed(1)}
-            {service.review_count > 0 ? ` (${service.review_count})` : ""}
-          </Text>
-        </View>
       </View>
     </View>
-  );
-});
+  </View>
+);
 
-const FeaturedCard = memo(function FeaturedCard({
+const FeaturedCard = ({
   service,
   isBoosted,
 }: {
   service: ServiceWithDetails;
   isBoosted: boolean;
-}) {
+}) => {
   const accentColor = isBoosted ? COLORS.primary : "#78350f";
 
   return (
@@ -198,17 +196,11 @@ const FeaturedCard = memo(function FeaturedCard({
     >
       {service.image_url ? (
         /* ── Image variant: service photo as full background ── */
-        <View style={{ flex: 1 }}>
-          <CachedImage
-            uri={service.image_url}
-            style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              bottom: 0,
-              left: 0,
-            }}
-          />
+        <ImageBackground
+          source={{ uri: service.image_url }}
+          style={{ flex: 1 }}
+          resizeMode="cover"
+        >
           {/* Temporary fallback for LinearGradient due to missing native module */}
           <View
             style={{
@@ -220,7 +212,7 @@ const FeaturedCard = memo(function FeaturedCard({
           >
             <FeaturedCardContent service={service} isBoosted={isBoosted} />
           </View>
-        </View>
+        </ImageBackground>
       ) : (
         /* ── Fallback: solid accent colour with subtle noise texture ── */
         <View
@@ -263,7 +255,7 @@ const FeaturedCard = memo(function FeaturedCard({
       )}
     </TouchableOpacity>
   );
-});
+};
 
 // ── Mini Card (horizontal scroll) ─────────────────────────────────────────────
 
@@ -282,11 +274,7 @@ const MINI_CARD_STROKE: Record<string, string> = {
   Others: "#d97706",
 };
 
-const MiniCard = memo(function MiniCard({
-  service,
-}: {
-  service: ServiceWithDetails;
-}) {
+const MiniCard = ({ service }: { service: ServiceWithDetails }) => {
   const catName = service.category?.name ?? "Others";
   const bg = MINI_CARD_BG[catName] ?? "#f1f5f9";
   const stroke = MINI_CARD_STROKE[catName] ?? "#64748b";
@@ -307,8 +295,8 @@ const MiniCard = memo(function MiniCard({
     >
       {/* Image / placeholder */}
       {service.image_url ? (
-        <CachedImage
-          uri={service.image_url}
+        <Image
+          source={{ uri: service.image_url }}
           style={{ height: 90, width: "100%" }}
         />
       ) : (
@@ -362,16 +350,18 @@ const MiniCard = memo(function MiniCard({
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "700",
+            fontSize: 14,
+            fontWeight: "800",
             color: "#0f172a",
-            marginBottom: 4,
+            marginBottom: 5,
           }}
           numberOfLines={1}
         >
           {service.title}
         </Text>
-        <Text style={{ fontSize: 13, fontWeight: "800", color: "#0f172a" }}>
+        <Text
+          style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+        >
           {formatPrice(service.price)}
         </Text>
         <Text
@@ -383,16 +373,11 @@ const MiniCard = memo(function MiniCard({
       </View>
     </TouchableOpacity>
   );
-});
+};
 
 // ── Promo Banner ──────────────────────────────────────────────────────────────
 
-const PromoBanner = memo(function PromoBanner({
-  onPress,
-}: {
-  onPress?: () => void;
-}) {
-  return (
+const PromoBanner = ({ onPress }: { onPress?: () => void }) => (
   <TouchableOpacity
     onPress={onPress}
     activeOpacity={0.85}
@@ -448,16 +433,11 @@ const PromoBanner = memo(function PromoBanner({
       </Text>
     </View>
   </TouchableOpacity>
-  );
-});
+);
 
 // ── Grid Card ─────────────────────────────────────────────────────────────────
 
-const GridCard = memo(function GridCard({
-  service,
-}: {
-  service: ServiceWithDetails;
-}) {
+const GridCard = ({ service }: { service: ServiceWithDetails }) => {
   const catName = service.category?.name ?? "Others";
   const bg = MINI_CARD_BG[catName] ?? "#f1f5f9";
   const stroke = MINI_CARD_STROKE[catName] ?? "#64748b";
@@ -479,8 +459,8 @@ const GridCard = memo(function GridCard({
       {/* Image */}
       {service.image_url ? (
         <View style={{ height: 110, position: "relative" }}>
-          <CachedImage
-            uri={service.image_url}
+          <Image
+            source={{ uri: service.image_url }}
             style={{ height: 110, width: "100%" }}
           />
           {/* Rating overlay */}
@@ -553,8 +533,8 @@ const GridCard = memo(function GridCard({
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "700",
+            fontSize: 14,
+            fontWeight: "800",
             color: "#0f172a",
             marginBottom: 6,
           }}
@@ -570,7 +550,13 @@ const GridCard = memo(function GridCard({
           }}
         >
           <View>
-            <Text style={{ fontSize: 14, fontWeight: "800", color: "#0f172a" }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "700",
+                color: COLORS.slate700,
+              }}
+            >
               {formatPrice(service.price)}
             </Text>
             <Text
@@ -584,11 +570,11 @@ const GridCard = memo(function GridCard({
       </View>
     </TouchableOpacity>
   );
-});
+};
 
 // ── Section Header ────────────────────────────────────────────────────────────
 
-const SectionHeader = memo(function SectionHeader({
+const SectionHeader = ({
   title,
   action,
   onAction,
@@ -596,31 +582,29 @@ const SectionHeader = memo(function SectionHeader({
   title: string;
   action?: string;
   onAction?: () => void;
-}) {
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 10,
-      }}
-    >
-      <Text style={{ fontSize: 14, fontWeight: "700", color: "#0f172a" }}>
-        {title}
-      </Text>
-      {action && (
-        <TouchableOpacity onPress={onAction} activeOpacity={0.7}>
-          <Text
-            style={{ fontSize: 12, fontWeight: "500", color: COLORS.primary }}
-          >
-            {action}
-          </Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-});
+}) => (
+  <View
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    }}
+  >
+    <Text style={{ fontSize: 14, fontWeight: "700", color: "#0f172a" }}>
+      {title}
+    </Text>
+    {action && (
+      <TouchableOpacity onPress={onAction} activeOpacity={0.7}>
+        <Text
+          style={{ fontSize: 12, fontWeight: "500", color: COLORS.primary }}
+        >
+          {action}
+        </Text>
+      </TouchableOpacity>
+    )}
+  </View>
+);
 
 // ── Screen Props ──────────────────────────────────────────────────────────────
 
@@ -636,8 +620,6 @@ type ServicesScreenProps = {
   listHeader?: ReactNode;
   /** Callback fired when scroll reaches or leaves the top */
   onAtTopChange?: (isAtTop: boolean) => void;
-  /** Increment to revalidate data without remounting the whole screen */
-  refreshKey?: number;
 };
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -651,7 +633,6 @@ export default function ServicesScreen({
   effectiveUserLocation,
   listHeader,
   onAtTopChange,
-  refreshKey,
 }: ServicesScreenProps) {
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [boostedServices, setBoostedServices] = useState<ServiceWithDetails[]>(
@@ -661,9 +642,6 @@ export default function ServicesScreen({
     useState<ServiceWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBoostModalVisible, setIsBoostModalVisible] = useState(false);
 
@@ -673,7 +651,6 @@ export default function ServicesScreen({
   const baseScrollHandler = useRef(createScrollHandler()).current;
   const scrollRef = useRef<any>(null);
   const scrollYRef = useRef(0);
-  const lastRefreshKeyRef = useRef(refreshKey);
 
   const backToTopAnim = useRef(new Animated.Value(0)).current;
 
@@ -770,54 +747,28 @@ export default function ServicesScreen({
   );
 
   const debouncedSearch = useDebounce(searchQuery, 400);
-  const isFiltered = useMemo(
-    () =>
-      !!searchQuery ||
-      !!filters.categoryId ||
-      filters.priceRange.min !== null ||
-      filters.priceRange.max !== null ||
-      !!filters.minRating ||
-      !!filters.location ||
-      filters.sortBy !== "newest",
-    [
-      searchQuery,
-      filters.categoryId,
-      filters.priceRange.min,
-      filters.priceRange.max,
-      filters.minRating,
-      filters.location,
-      filters.sortBy,
-    ],
-  );
 
   // ── Load services ────────────────────────────────────────────────────────
-  const loadServices = useCallback(async (force = false) => {
+  const loadServices = useCallback(async () => {
     try {
       setError(null);
       const [data, boosted, editorsPick] = await Promise.all([
-        searchAndFilterServices(
-          {
-            searchQuery: debouncedSearch,
-            categoryId: filters.categoryId,
-            minPrice: filters.priceRange.min,
-            maxPrice: filters.priceRange.max,
-            minRating: filters.minRating,
-            location: filters.location,
-            sortBy: filters.sortBy,
-            userLocation: filters.userLocation,
-            limit: isFiltered ? FILTERED_PAGE_SIZE : undefined,
-            page: 0,
-          },
-          { force },
-        ),
-        fetchBoostedServices({ force }),
-        fetchEditorsPick({ force }),
+        searchAndFilterServices({
+          searchQuery: debouncedSearch,
+          categoryId: filters.categoryId,
+          minPrice: filters.priceRange.min,
+          maxPrice: filters.priceRange.max,
+          minRating: filters.minRating,
+          location: filters.location,
+          sortBy: filters.sortBy,
+          userLocation: filters.userLocation,
+        }),
+        fetchBoostedServices(),
+        fetchEditorsPick(),
       ]);
       setServices(data);
       setBoostedServices(boosted);
       setEditorsPickService(editorsPick);
-      setPage(0);
-      setHasMore(isFiltered && data.length === FILTERED_PAGE_SIZE);
     } catch {
       setError("Failed to load services. Please try again.");
     } finally {
@@ -833,158 +784,55 @@ export default function ServicesScreen({
     filters.location,
     filters.sortBy,
     filters.userLocation,
-    isFiltered,
   ]);
 
   useEffect(() => {
     loadServices();
   }, [loadServices]);
 
-  useEffect(() => {
-    if (refreshKey == null || lastRefreshKeyRef.current === refreshKey) {
-      return;
-    }
-
-    lastRefreshKeyRef.current = refreshKey;
-    loadServices(true);
-  }, [loadServices, refreshKey]);
-
-  const onRefresh = useCallback(() => {
+  const onRefresh = () => {
     setRefreshing(true);
-    loadServices(true);
-  }, [loadServices]);
-
-  const loadMoreServices = useCallback(async () => {
-    if (!isFiltered || loadingMore || loading || refreshing || !hasMore) return;
-    const nextPage = page + 1;
-    setLoadingMore(true);
-    try {
-      const data = await searchAndFilterServices({
-        searchQuery: debouncedSearch,
-        categoryId: filters.categoryId,
-        minPrice: filters.priceRange.min,
-        maxPrice: filters.priceRange.max,
-        minRating: filters.minRating,
-        location: filters.location,
-        sortBy: filters.sortBy,
-        userLocation: filters.userLocation,
-        limit: FILTERED_PAGE_SIZE,
-        page: nextPage,
-      });
-      setServices((prev) => [...prev, ...data]);
-      setPage(nextPage);
-      setHasMore(data.length === FILTERED_PAGE_SIZE);
-    } catch {
-      setHasMore(false);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [
-    debouncedSearch,
-    filters.categoryId,
-    filters.priceRange.min,
-    filters.priceRange.max,
-    filters.minRating,
-    filters.location,
-    filters.sortBy,
-    filters.userLocation,
-    hasMore,
-    isFiltered,
-    loading,
-    loadingMore,
-    page,
-    refreshing,
-  ]);
+    loadServices();
+  };
 
   // ── Derived data for sections ────────────────────────────────────────────
 
+  const isFiltered =
+    !!searchQuery ||
+    !!filters.categoryId ||
+    filters.priceRange.min !== null ||
+    filters.priceRange.max !== null ||
+    !!filters.minRating ||
+    !!filters.location ||
+    filters.sortBy !== "newest";
+
   // "Featured" — boosted service takes priority; Editor's Pick is the fallback.
   // Neither shows when filters/search are active.
-  const featuredService = useMemo(
-    () =>
-      !isFiltered
-        ? boostedServices.length > 0
-          ? boostedServices[0]
-          : editorsPickService
-        : null,
-    [boostedServices, editorsPickService, isFiltered],
-  );
+  const featuredService = !isFiltered
+    ? boostedServices.length > 0
+      ? boostedServices[0]
+      : editorsPickService
+    : null;
 
   // Whether the featured card is a paid boost or an editor's pick
   const featuredIsBoosted = !isFiltered && boostedServices.length > 0;
 
   // "Nearest to you" — only shown when the user has granted location permission.
   // Shows up to 5 closest services that have coordinates, sorted by distance.
-  const nearestServices = useMemo(
-    () =>
-      !isFiltered && filters.userLocation
-        ? [...services]
-            .filter((s) => s.latitude != null && s.longitude != null)
-            .sort(
-              (a, b) =>
-                (a._distanceKm ?? Infinity) - (b._distanceKm ?? Infinity),
-            )
-            .slice(0, 5)
-        : [],
-    [filters.userLocation, isFiltered, services],
-  );
+  const nearestServices =
+    !isFiltered && filters.userLocation
+      ? [...services]
+          .filter((s) => s.latitude != null && s.longitude != null)
+          .sort(
+            (a, b) => (a._distanceKm ?? Infinity) - (b._distanceKm ?? Infinity),
+          )
+          .slice(0, 5)
+      : [];
 
-  // "Top rated" — top 6 by rating, excluding any boosted service already shown
-  const topRatedServices = useMemo(
-    () =>
-      !isFiltered
-        ? [...services]
-            .sort((a, b) => b.rating - a.rating)
-            .filter((s) => s.id !== featuredService?.id)
-            .slice(0, 6)
-        : [],
-    [featuredService?.id, isFiltered, services],
-  );
-
-  const keyExtractor = useCallback((item: ServiceWithDetails) => item.id, []);
-  const renderGridItem = useCallback(
-    ({ item }: { item: ServiceWithDetails }) => <GridCard service={item} />,
-    [],
-  );
-  const renderMiniItem = useCallback(
-    ({ item }: { item: ServiceWithDetails }) => <MiniCard service={item} />,
-    [],
-  );
-  const filteredListHeader = useMemo(
-    () => (listHeader ? <>{listHeader}</> : null),
-    [listHeader],
-  );
-  const renderFilteredFooter = useCallback(() => {
-    if (!loadingMore) return null;
-    return (
-      <View style={{ paddingVertical: 16, alignItems: "center" }}>
-        <Text style={{ fontSize: 12, color: COLORS.slate400 }}>
-          Loading more services...
-        </Text>
-      </View>
-    );
-  }, [loadingMore]);
-  const openBoostModal = useCallback(() => setIsBoostModalVisible(true), []);
-  const closeBoostModal = useCallback(() => setIsBoostModalVisible(false), []);
-  const openNearestList = useCallback(() => {
-    router.push({
-      pathname: "/services-list",
-      params: {
-        title: "Nearest to You",
-        sort: "nearest",
-        ...(effectiveUserLocation && {
-          userLocationLat: String(effectiveUserLocation.latitude),
-          userLocationLng: String(effectiveUserLocation.longitude),
-        }),
-      },
-    });
-  }, [effectiveUserLocation]);
-  const openTopRatedList = useCallback(() => {
-    router.push({
-      pathname: "/services-list",
-      params: { title: "Top Rated", sort: "rating_high" },
-    });
-  }, []);
+  // "Top rated" — top 6 reviewed services by rating, then review count.
+  const topRatedServices = !isFiltered
+    ? [...services].filter(hasRating).sort(compareTopRatedServices).slice(0, 6)
+    : [];
 
   // ── States ───────────────────────────────────────────────────────────────
 
@@ -1051,7 +899,6 @@ export default function ServicesScreen({
     return (
       <View className="flex-1">
         <FlatList
-          {...GRID_LIST_PROPS}
           ref={scrollRef}
           onScroll={scrollHandler}
           scrollEventThrottle={16}
@@ -1059,11 +906,8 @@ export default function ServicesScreen({
           numColumns={2}
           columnWrapperStyle={{ justifyContent: "space-between" }}
           contentContainerStyle={{ padding: 16 }}
-          keyExtractor={keyExtractor}
-          ListHeaderComponent={filteredListHeader}
-          ListFooterComponent={renderFilteredFooter}
-          onEndReached={loadMoreServices}
-          onEndReachedThreshold={0.4}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={listHeader ? () => <>{listHeader}</> : undefined}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1072,7 +916,7 @@ export default function ServicesScreen({
               tintColor={COLORS.primary}
             />
           }
-          renderItem={renderGridItem}
+          renderItem={({ item }) => <GridCard service={item} />}
         />
         <FilterBottomSheet
           visible={filterModalVisible}
@@ -1169,22 +1013,36 @@ export default function ServicesScreen({
               <SectionHeader
                 title="Nearest to you"
                 action="See all"
-                onAction={openNearestList}
+                onAction={() =>
+                  router.push({
+                    pathname: "/services-list",
+                    params: {
+                      title: "Nearest to You",
+                      sort: "nearest",
+                      ...(effectiveUserLocation && {
+                        userLocationLat: String(effectiveUserLocation.latitude),
+                        userLocationLng: String(
+                          effectiveUserLocation.longitude,
+                        ),
+                      }),
+                    },
+                  })
+                }
               />
-              <FlatList
-                {...SMALL_LIST_PROPS}
-                data={nearestServices}
+              <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ gap: 10 }}
-                keyExtractor={keyExtractor}
-                renderItem={renderMiniItem}
-              />
+              >
+                {nearestServices.map((s) => (
+                  <MiniCard key={s.id} service={s} />
+                ))}
+              </ScrollView>
             </View>
           )}
 
           {/* ── Promo banner ── */}
-          <PromoBanner onPress={openBoostModal} />
+          <PromoBanner onPress={() => setIsBoostModalVisible(true)} />
 
           {/* ── Top rated ── */}
           {topRatedServices.length > 0 && (
@@ -1192,7 +1050,12 @@ export default function ServicesScreen({
               <SectionHeader
                 title="Top rated"
                 action="See all"
-                onAction={openTopRatedList}
+                onAction={() =>
+                  router.push({
+                    pathname: "/services-list",
+                    params: { title: "Top Rated", sort: "rating_high" },
+                  })
+                }
               />
               <View
                 style={{
@@ -1223,7 +1086,7 @@ export default function ServicesScreen({
       <BoostServiceModal
         visible={isBoostModalVisible}
         userId={userId}
-        onClose={closeBoostModal}
+        onClose={() => setIsBoostModalVisible(false)}
       />
 
       {renderBackToTop()}

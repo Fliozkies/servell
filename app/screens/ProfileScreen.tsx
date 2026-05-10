@@ -24,7 +24,13 @@ import {
   X,
   Zap,
 } from "lucide-react-native";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -69,6 +75,7 @@ import {
   Profile,
   Service,
   ServiceSubscriptionWithProfile,
+  ServiceWithDetails,
 } from "../../lib/types/database.types";
 import { formatDisplayName, formatPrice } from "../../lib/utils/format";
 import { uploadImage } from "../../lib/utils/imageUtils";
@@ -104,7 +111,7 @@ export default function ProfileScreen() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [subscriberCount, setSubscriberCount] = useState(0);
-  const [services, setServices] = useState<Service[]>([]);
+  const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [subscriptions, setSubscriptions] = useState<
     ServiceSubscriptionWithProfile[]
@@ -117,7 +124,9 @@ export default function ProfileScreen() {
   const [isActionSheetVisible, setIsActionSheetVisible] = useState(false);
   const [isBoostModalVisible, setIsBoostModalVisible] = useState(false);
   const [isEditServiceVisible, setIsEditServiceVisible] = useState(false);
-  const [serviceToEdit, setServiceToEdit] = useState<Service | null>(null);
+  const [serviceToEdit, setServiceToEdit] = useState<ServiceWithDetails | null>(
+    null,
+  );
   const [isProfileImageModalVisible, setIsProfileImageModalVisible] =
     useState(false);
 
@@ -812,7 +821,7 @@ const ServiceCard = ({
   onMorePress,
   onToggleStatus,
 }: {
-  service: Service;
+  service: ServiceWithDetails;
   onMorePress: () => void;
   onToggleStatus: () => void;
 }) => (
@@ -955,17 +964,53 @@ const EditServiceModal = ({
   onSaved,
 }: {
   visible: boolean;
-  service: Service;
+  service: ServiceWithDetails;
   onClose: () => void;
-  onSaved: (updated: Service) => void;
+  onSaved: (updated: ServiceWithDetails) => void;
 }) => {
   const [saving, setSaving] = useState(false);
   const form = useServiceForm(visible ? service : null);
+  const hasChanges = useMemo(() => {
+    const price = form.price.trim() ? Number(form.price) : null;
+    const phoneNumber = form.phoneNumber.trim() || null;
+    const initialTags = service.tags ?? [];
+    const tagsChanged =
+      form.tags.length !== initialTags.length ||
+      form.tags.some((tag, index) => tag !== initialTags[index]);
+
+    return (
+      form.title.trim() !== service.title ||
+      form.description.trim() !== service.description ||
+      price !== (service.price ?? null) ||
+      form.location.trim() !== service.location ||
+      phoneNumber !== (service.phone_number ?? null) ||
+      tagsChanged ||
+      (form.selectedCategory ?? null) !== (service.category_id ?? null) ||
+      form.selectedImage !== null
+    );
+  }, [
+    form.description,
+    form.location,
+    form.phoneNumber,
+    form.price,
+    form.selectedCategory,
+    form.selectedImage,
+    form.tags,
+    form.title,
+    service.category_id,
+    service.description,
+    service.location,
+    service.phone_number,
+    service.price,
+    service.tags,
+    service.title,
+  ]);
 
   const handleSave = async () => {
+    if (!hasChanges) return;
+
     if (
       !validateServiceForm({
-        serviceType: form.serviceType,
         title: form.title,
         description: form.description,
         location: form.location,
@@ -992,7 +1037,13 @@ const EditServiceModal = ({
           image_url: imageUrl,
         })
         .eq("id", service.id)
-        .select()
+        .select(
+          `
+          *,
+          category:categories(*),
+          profile:profiles(*)
+        `,
+        )
         .single();
       if (error) throw error;
       onSaved(data);
@@ -1014,8 +1065,10 @@ const EditServiceModal = ({
           <Text className="text-lg font-bold text-slate-900">Edit Service</Text>
           <TouchableOpacity
             onPress={handleSave}
-            disabled={saving}
-            className="bg-[#1877F2] px-4 py-2 rounded-full"
+            disabled={saving || !hasChanges}
+            className={`px-4 py-2 rounded-full ${
+              saving || !hasChanges ? "bg-slate-300" : "bg-[#1877F2]"
+            }`}
           >
             {saving ? (
               <ActivityIndicator size="small" color="white" />

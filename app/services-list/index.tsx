@@ -12,19 +12,13 @@
 
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   Dimensions,
   FlatList,
+  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
   RefreshControl,
@@ -38,8 +32,6 @@ import {
 } from "react-native-safe-area-context";
 import { searchAndFilterServices } from "../../lib/api/services.api";
 import BottomNav from "../../lib/components/BottomNav";
-import { CachedImage } from "../../lib/components/ui/CachedImage";
-import { GRID_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import {
   ScrollDirectionProvider,
@@ -53,7 +45,6 @@ import { formatPrice } from "../../lib/utils/format";
 
 const { width } = Dimensions.get("window");
 const COLUMN_WIDTH = (width - 48) / 2;
-const SERVICES_LIST_PAGE_SIZE = 24;
 
 // How far down before the scroll-to-top button appears
 const SCROLL_TO_TOP_THRESHOLD = 400;
@@ -67,13 +58,25 @@ function formatAuthor(service: ServiceWithDetails): string {
   return "Unknown";
 }
 
-const ServiceCard = memo(function ServiceCard({
+function hasRating(service: ServiceWithDetails): boolean {
+  return service.review_count > 0 && service.rating > 0;
+}
+
+function compareTopRatedServices(
+  a: ServiceWithDetails,
+  b: ServiceWithDetails,
+): number {
+  if (b.rating !== a.rating) return b.rating - a.rating;
+  return b.review_count - a.review_count;
+}
+
+const ServiceCard = ({
   service,
   showDistance,
 }: {
   service: ServiceWithDetails;
   showDistance: boolean;
-}) {
+}) => {
   const catName = service.category?.name ?? "Others";
 
   return (
@@ -92,8 +95,8 @@ const ServiceCard = memo(function ServiceCard({
     >
       {service.image_url ? (
         <View style={{ height: 130, position: "relative" }}>
-          <CachedImage
-            uri={service.image_url}
+          <Image
+            source={{ uri: service.image_url }}
             style={{ height: 130, width: "100%" }}
           />
           <View
@@ -186,8 +189,8 @@ const ServiceCard = memo(function ServiceCard({
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "700",
+            fontSize: 14,
+            fontWeight: "800",
             color: "#0f172a",
             marginBottom: 6,
           }}
@@ -195,7 +198,9 @@ const ServiceCard = memo(function ServiceCard({
         >
           {service.title}
         </Text>
-        <Text style={{ fontSize: 14, fontWeight: "800", color: "#0f172a" }}>
+        <Text
+          style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+        >
           {formatPrice(service.price)}
         </Text>
         <Text
@@ -207,7 +212,7 @@ const ServiceCard = memo(function ServiceCard({
       </View>
     </TouchableOpacity>
   );
-});
+};
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -240,9 +245,6 @@ function ServiceListScreenInner() {
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // BottomNav
@@ -285,74 +287,41 @@ function ServiceListScreenInner() {
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
-  const load = useCallback(
-    async (pageNum = 0, append = false, force = false) => {
-      try {
-        setError(null);
-        if (!append) setLoading(true);
-        const data = await searchAndFilterServices(
-          {
-            categoryId,
-            sortBy: sort,
-            userLocation,
-            limit: SERVICES_LIST_PAGE_SIZE,
-            page: pageNum,
-          },
-          { force },
-        );
-        setServices((prev) => (append ? [...prev, ...data] : data));
-        setPage(pageNum);
-        setHasMore(data.length === SERVICES_LIST_PAGE_SIZE);
-      } catch {
-        if (append) {
-          setHasMore(false);
-        } else {
-          setError("Failed to load services. Pull down to retry.");
-        }
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
-      }
-    },
-    [categoryId, sort, userLocation],
-  );
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      const data = await searchAndFilterServices({
+        categoryId,
+        sortBy: sort,
+        userLocation,
+      });
+      setServices(
+        sort === "rating_high"
+          ? data.filter(hasRating).sort(compareTopRatedServices)
+          : data,
+      );
+    } catch {
+      setError("Failed to load services. Pull down to retry.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [categoryId, sort, userLocation]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = () => {
     setRefreshing(true);
-    load(0, false, true);
-  }, [load]);
-
-  const loadMore = useCallback(() => {
-    if (loading || loadingMore || refreshing || !hasMore) return;
-    setLoadingMore(true);
-    load(page + 1, true);
-  }, [hasMore, load, loading, loadingMore, page, refreshing]);
+    load();
+  };
 
   const handleTabPress = (_tab: PageName) => {
     router.back();
   };
 
   const showDistance = sort === "nearest" && userLocation != null;
-  const keyExtractor = useCallback((item: ServiceWithDetails) => item.id, []);
-  const renderService = useCallback(
-    ({ item }: { item: ServiceWithDetails }) => (
-      <ServiceCard service={item} showDistance={showDistance} />
-    ),
-    [showDistance],
-  );
-  const renderFooter = useCallback(() => {
-    if (!loadingMore) return null;
-    return (
-      <View style={{ paddingVertical: 16 }}>
-        <ActivityIndicator size="small" color={COLORS.primary} />
-      </View>
-    );
-  }, [loadingMore]);
 
   return (
     <SafeAreaView
@@ -393,8 +362,7 @@ function ServiceListScreenInner() {
         </Text>
         {services.length > 0 && !loading && (
           <Text style={{ fontSize: 13, color: COLORS.slate400 }}>
-            {services.length}
-            {hasMore ? "+" : ""} results
+            {services.length} results
           </Text>
         )}
       </View>
@@ -470,19 +438,15 @@ function ServiceListScreenInner() {
           </View>
         ) : (
           <FlatList
-            {...GRID_LIST_PROPS}
             ref={flatListRef}
             data={services}
             numColumns={2}
-            keyExtractor={keyExtractor}
+            keyExtractor={(item) => item.id}
             columnWrapperStyle={{ justifyContent: "space-between" }}
             contentContainerStyle={{ padding: 16 }}
             showsVerticalScrollIndicator={false}
             onScroll={handleScroll}
             scrollEventThrottle={16}
-            ListFooterComponent={renderFooter}
-            onEndReached={loadMore}
-            onEndReachedThreshold={0.4}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -491,7 +455,9 @@ function ServiceListScreenInner() {
                 tintColor={COLORS.primary}
               />
             }
-            renderItem={renderService}
+            renderItem={({ item }) => (
+              <ServiceCard service={item} showDistance={showDistance} />
+            )}
           />
         )}
       </View>
