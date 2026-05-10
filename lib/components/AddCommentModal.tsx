@@ -3,7 +3,7 @@
 // Reused for:
 //  - Adding/replying to comments (Comments tab)
 //  - Provider replying to a review (Reviews tab) via replyToReview prop
-import { AntDesign, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -254,9 +254,6 @@ export default function AddCommentModal({
                   )}
                 </View>
               </View>
-              <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-                <AntDesign name="close" size={16} color="#64748b" />
-              </TouchableOpacity>
             </View>
 
             {/* Quoted text */}
@@ -388,14 +385,6 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 15, fontWeight: "700", color: "#0f172a" },
   replyingToLabel: { fontSize: 11, fontWeight: "600", marginTop: 1 },
-  closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#f1f5f9",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   quotedComment: {
     flexDirection: "row",
     alignItems: "flex-start",
