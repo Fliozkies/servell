@@ -5,7 +5,7 @@ import {
   CreateCommentInput,
   UpdateCommentInput,
 } from "../types/database.types";
-import { sendNotification } from "./notifications.api";
+import { sendNotificationSafely } from "./notifications.api";
 import { supabase } from "./supabase";
 
 const COMMENTS_PER_PAGE = 10;
@@ -171,7 +171,7 @@ export async function createComment(
 
     // ✅ FIX: If this is a top-level comment, notify the service owner
     if (!input.parent_comment_id && service && service.user_id !== user.id) {
-      await sendNotification({
+      await sendNotificationSafely({
         user_id: service.user_id,
         type: "new_comment",
         title: "New Comment",
@@ -189,7 +189,7 @@ export async function createComment(
         .single();
 
       if (parentComment && parentComment.user_id !== user.id) {
-        await sendNotification({
+        await sendNotificationSafely({
           user_id: parentComment.user_id,
           type: "comment_reply",
           title: "New Reply",
@@ -320,17 +320,6 @@ export async function toggleCommentLike(commentId: string): Promise<void> {
 
       if (error) throw error;
 
-      // Decrement like_count (floor at 0)
-      const { data: current } = await supabase
-        .from("service_comments")
-        .select("like_count")
-        .eq("id", commentId)
-        .single();
-      await supabase
-        .from("service_comments")
-        .update({ like_count: Math.max(0, (current?.like_count ?? 1) - 1) })
-        .eq("id", commentId);
-
       // Don't notify when unliking
     } else {
       // Like
@@ -341,17 +330,6 @@ export async function toggleCommentLike(commentId: string): Promise<void> {
 
       if (error) throw error;
 
-      // Increment like_count
-      const { data: current } = await supabase
-        .from("service_comments")
-        .select("like_count")
-        .eq("id", commentId)
-        .single();
-      await supabase
-        .from("service_comments")
-        .update({ like_count: (current?.like_count ?? 0) + 1 })
-        .eq("id", commentId);
-
       // ✅ FIX: Notify the comment author about the like - INCLUDE service_id
       const { data: comment } = await supabase
         .from("service_comments")
@@ -359,19 +337,19 @@ export async function toggleCommentLike(commentId: string): Promise<void> {
         .eq("id", commentId)
         .single();
 
-      if (comment && comment.user_id !== user.id) {
-        const serviceTitle = comment.service?.[0]?.title ?? "a service";
-        await sendNotification({
-          user_id: comment.user_id,
-          type: "comment_like",
-          title: "Comment Liked",
-          body: `Someone liked your comment on ${serviceTitle}`,
-          data: {
-            comment_id: commentId,
-            service_id: comment.service_id,
-          },
-        });
-      }
+      if (!comment || comment.user_id === user.id) return;
+
+      const serviceTitle = comment.service?.[0]?.title ?? "a service";
+      await sendNotificationSafely({
+        user_id: comment.user_id,
+        type: "comment_like",
+        title: "Comment Liked",
+        body: `Someone liked your comment on ${serviceTitle}`,
+        data: {
+          comment_id: commentId,
+          service_id: comment.service_id,
+        },
+      });
     }
   } catch (error) {
     console.error("Error toggling comment like:", error);

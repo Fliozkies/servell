@@ -25,7 +25,11 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.xfliozkies.servell",
       "softwareKeyboardLayoutMode": "resize",
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "output": "static",
@@ -33,6 +37,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
       [
         "expo-location",
         {

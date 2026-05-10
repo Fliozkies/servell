@@ -1,11 +1,10 @@
+// app/screens/MapScreen.tsx
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
-  Keyboard,
   Platform,
   StyleSheet,
   Text,
@@ -14,13 +13,14 @@ import {
   View,
 } from "react-native";
 import MapView, { Callout, Marker, Region } from "react-native-maps";
-import { fetchServices, haversineDistance } from "../../lib/api/services.api";
-import { supabase } from "../../lib/api/supabase";
-import { SMALL_LIST_PROPS } from "../../lib/constants/performance";
+import { searchAndFilterServices } from "../../lib/api/services.api";
+import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { COLORS } from "../../lib/constants/theme";
 import { useDebounce } from "../../lib/hooks/useDebounce";
 import { ServiceWithDetails } from "../../lib/types/database.types";
+import { FilterOptions } from "../../lib/types/filter.types";
 
+// Hides all Google POI markers, transit icons, and business labels
 const CLEAN_MAP_STYLE = [
   {
     featureType: "poi",
@@ -46,6 +46,7 @@ const CLEAN_MAP_STYLE = [
   },
 ];
 
+// Digos City default center
 const DIGOS_REGION: Region = {
   latitude: 6.7494,
   longitude: 125.3573,
@@ -53,223 +54,195 @@ const DIGOS_REGION: Region = {
   longitudeDelta: 0.06,
 };
 
+// How far (meters) the user must move before we update their marker.
+// 30m is fine-grained enough to feel live without hammering the GPS.
 const LOCATION_UPDATE_DISTANCE_M = 30;
-const MAX_SUGGESTIONS = 7;
-const NAV_CLEARANCE = 140;
 
-function formatDistance(km: number): string {
-  if (km < 1) return `${Math.round(km * 1000)}m away`;
-  if (km < 10) return `${km.toFixed(1)}km away`;
-  return `${Math.round(km)}km away`;
-}
+type MapScreenProps = {
+  filters: FilterOptions;
+  onFiltersChange: (filters: FilterOptions) => void;
+};
 
-export default function MapScreen({ active = false }: { active?: boolean }) {
+export default function MapScreen({
+  filters,
+  onFiltersChange,
+}: MapScreenProps) {
   const mapRef = useRef<MapView>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(
     null,
   );
-  const searchInputRef = useRef<TextInput>(null);
-
-  const locationTrackingStarted = useRef(false);
 
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [userLocation, setUserLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
-  const [profileLocation, setProfileLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
   const [locationError, setLocationError] = useState(false);
   const [centeredOnUser, setCenteredOnUser] = useState(false);
-  const centeredOnUserRef = useRef(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
-    null,
-  );
-  const debouncedQuery = useDebounce(searchQuery, 300);
+  const debouncedSearch = useDebounce(searchQuery, 400);
 
-  const referenceLocation = userLocation ?? profileLocation;
+  const hasActiveFilters =
+    filters.categoryId !== null ||
+    filters.priceRange.min !== null ||
+    filters.priceRange.max !== null ||
+    filters.minRating !== null ||
+    (filters.location && filters.location.trim() !== "") ||
+    filters.sortBy !== "newest";
 
+  const shouldFitFilteredResults =
+    debouncedSearch.trim().length > 0 || hasActiveFilters;
+
+  // ── Load services matching map search / filters, then keep pinned only ───
   useEffect(() => {
-    async function loadProfileLocation() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("location_lat, location_lng")
-        .eq("id", user.id)
-        .single();
-      if (profile?.location_lat != null && profile?.location_lng != null) {
-        const coords = {
-          latitude: profile.location_lat,
-          longitude: profile.location_lng,
-        };
-        setProfileLocation(coords);
-        // Pan to profile location only if GPS hasn't already taken over
-        if (!userLocation) {
-          mapRef.current?.animateToRegion(
-            { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
-            800,
+    let cancelled = false;
+
+    async function loadServices() {
+      try {
+        const data = await searchAndFilterServices({
+          searchQuery: debouncedSearch,
+          categoryId: filters.categoryId,
+          minPrice: filters.priceRange.min,
+          maxPrice: filters.priceRange.max,
+          minRating: filters.minRating,
+          location: filters.location,
+          sortBy: filters.sortBy,
+          userLocation: filters.userLocation,
+        });
+
+        if (!cancelled) {
+          setServices(
+            data.filter((s) => s.latitude != null && s.longitude != null),
           );
         }
+      } catch {
+        // Non-fatal — map still works without services
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
-    loadProfileLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const loadServices = useCallback(async () => {
-    try {
-      const data = await fetchServices();
-      setServices(
-        data.filter((s) => s.latitude != null && s.longitude != null),
-      );
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    loadServices();
 
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debouncedSearch,
+    filters.categoryId,
+    filters.priceRange.min,
+    filters.priceRange.max,
+    filters.minRating,
+    filters.location,
+    filters.sortBy,
+    filters.userLocation,
+  ]);
+
+  // ── Live location tracking ───────────────────────────────────────────────
   const startLocationTracking = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== "granted") {
       setLocationError(true);
       return;
     }
+
+    // Get a quick initial fix
     try {
-      // Use last known position first to avoid a second OS-level prompt
-      // that getCurrentPositionAsync can trigger on some devices.
-      const last = await Location.getLastKnownPositionAsync();
-      const coords = last
-        ? { latitude: last.coords.latitude, longitude: last.coords.longitude }
-        : null;
-      if (coords) {
-        setUserLocation(coords);
-        mapRef.current?.animateToRegion(
-          { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
-          800,
-        );
-        centeredOnUserRef.current = true;
-        setCenteredOnUser(true);
-      }
+      const initial = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const coords = {
+        latitude: initial.coords.latitude,
+        longitude: initial.coords.longitude,
+      };
+      setUserLocation(coords);
+
+      // Pan the map to the user on first fix
+      mapRef.current?.animateToRegion(
+        { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+        800,
+      );
+      setCenteredOnUser(true);
     } catch {
-      // fall back to profile location
+      // fall through to watchPosition
     }
+
+    // Subscribe — only fires when user moves more than the threshold
     locationSubscription.current = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Balanced,
         distanceInterval: LOCATION_UPDATE_DISTANCE_M,
       },
       (loc) => {
-        const coords = {
+        setUserLocation({
           latitude: loc.coords.latitude,
           longitude: loc.coords.longitude,
-        };
-        setUserLocation(coords);
-        // Pan to first live fix if we had no last-known position
-        if (!centeredOnUserRef.current) {
-          mapRef.current?.animateToRegion(
-            { ...coords, latitudeDelta: 0.02, longitudeDelta: 0.02 },
-            800,
-          );
-          centeredOnUserRef.current = true;
-          setCenteredOnUser(true);
-        }
+        });
       },
     );
   }, []);
 
   useEffect(() => {
-    loadServices();
-    if (active && !locationTrackingStarted.current) {
-      locationTrackingStarted.current = true;
-      startLocationTracking();
-    }
+    startLocationTracking();
+
     return () => {
+      // Clean up subscription on unmount
       locationSubscription.current?.remove();
     };
-  }, [loadServices, startLocationTracking, active]);
+  }, [startLocationTracking]);
 
+  useEffect(() => {
+    if (!shouldFitFilteredResults || services.length === 0) return;
+
+    const coordinates = services.map((service) => ({
+      latitude: service.latitude!,
+      longitude: service.longitude!,
+    }));
+
+    const timer = setTimeout(() => {
+      if (coordinates.length === 1) {
+        mapRef.current?.animateToRegion(
+          {
+            ...coordinates[0],
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          },
+          500,
+        );
+        return;
+      }
+
+      mapRef.current?.fitToCoordinates(coordinates, {
+        edgePadding: { top: 150, right: 60, bottom: 120, left: 60 },
+        animated: true,
+      });
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [services, shouldFitFilteredResults]);
+
+  // ── Recenter button ──────────────────────────────────────────────────────
   const handleRecenter = () => {
     if (!userLocation) return;
     mapRef.current?.animateToRegion(
-      { ...userLocation, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+      {
+        ...userLocation,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      },
       500,
     );
     setCenteredOnUser(true);
   };
 
+  // ── Format price for callout ─────────────────────────────────────────────
   const formatCalloutPrice = (price: number | null) =>
     price != null ? `₱${price.toLocaleString()}` : "Contact for price";
 
-  const suggestions = useMemo(() => {
-    const q = debouncedQuery.trim().toLowerCase();
-    if (!q) return [];
-    return services
-      .filter((s) => {
-        const inTitle = s.title.toLowerCase().includes(q);
-        const inCategory = s.category?.name?.toLowerCase().includes(q) ?? false;
-        const inTags =
-          s.tags?.some((t) => t.toLowerCase().includes(q)) ?? false;
-        return inTitle || inCategory || inTags;
-      })
-      .map((s) => {
-        const distanceKm =
-          referenceLocation && s.latitude != null && s.longitude != null
-            ? haversineDistance(
-                referenceLocation.latitude,
-                referenceLocation.longitude,
-                s.latitude,
-                s.longitude,
-              )
-            : null;
-        return { ...s, _distanceKm: distanceKm };
-      })
-      .sort((a, b) => {
-        if (a._distanceKm == null && b._distanceKm == null) return 0;
-        if (a._distanceKm == null) return 1;
-        if (b._distanceKm == null) return -1;
-        return a._distanceKm - b._distanceKm;
-      })
-      .slice(0, MAX_SUGGESTIONS);
-  }, [debouncedQuery, services, referenceLocation]);
-
-  const handleSelectSuggestion = (
-    service: ServiceWithDetails & { _distanceKm: number | null },
-  ) => {
-    Keyboard.dismiss();
-    setSearchQuery(service.title);
-    setSearchFocused(false);
-    setSelectedServiceId(service.id);
-    if (service.latitude != null && service.longitude != null) {
-      mapRef.current?.animateToRegion(
-        {
-          latitude: service.latitude,
-          longitude: service.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        },
-        600,
-      );
-    }
-  };
-
-  const handleClearSearch = () => {
-    setSearchQuery("");
-    setSelectedServiceId(null);
-    searchInputRef.current?.focus();
-  };
-
-  const showSuggestions = searchFocused && debouncedQuery.trim().length > 0;
-
+  // ── Render ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -286,22 +259,17 @@ export default function MapScreen({ active = false }: { active?: boolean }) {
         style={{ flex: 1 }}
         initialRegion={DIGOS_REGION}
         customMapStyle={CLEAN_MAP_STYLE}
-        showsUserLocation={false}
+        showsUserLocation={false} // we draw our own marker for full control
         showsMyLocationButton={false}
         showsPointsOfInterests={false}
         showsBuildings={false}
-        onTouchStart={() => {
-          setCenteredOnUser(false);
-          if (searchFocused) {
-            Keyboard.dismiss();
-            setSearchFocused(false);
-          }
-        }}
+        onTouchStart={() => setCenteredOnUser(false)}
       >
-        {userLocation ? (
+        {/* ── User location marker (red ribbon / pin) ── */}
+        {userLocation && (
           <Marker
             coordinate={userLocation}
-            anchor={{ x: 0.5, y: 0.5 }}
+            anchor={{ x: 0.5, y: 1 }}
             zIndex={999}
           >
             <View style={styles.userMarkerWrapper}>
@@ -309,201 +277,119 @@ export default function MapScreen({ active = false }: { active?: boolean }) {
               <View style={styles.userMarkerPulse} />
             </View>
           </Marker>
-        ) : profileLocation ? (
-          <Marker
-            coordinate={profileLocation}
-            anchor={{ x: 0.5, y: 0.5 }}
-            zIndex={999}
-          >
-            <View style={styles.userMarkerWrapper}>
-              <View style={[styles.userMarkerDot, styles.profileMarkerDot]} />
-              <View
-                style={[styles.userMarkerPulse, styles.profileMarkerPulse]}
-              />
-            </View>
-          </Marker>
-        ) : null}
+        )}
 
-        {services.map((service) => {
-          const isSelected = service.id === selectedServiceId;
-          return (
-            <Marker
-              key={service.id}
-              coordinate={{
-                latitude: service.latitude!,
-                longitude: service.longitude!,
-              }}
-              zIndex={isSelected ? 100 : 1}
+        {/* ── Service markers ── */}
+        {services.map((service) => (
+          <Marker
+            key={service.id}
+            coordinate={{
+              latitude: service.latitude!,
+              longitude: service.longitude!,
+            }}
+            pinColor="#1877F2"
+          >
+            <Callout
+              tooltip
+              onPress={() => router.push(`/service/${service.id}`)}
             >
-              <View style={styles.pin}>
-                <Ionicons
-                  name="location"
-                  size={isSelected ? 32 : 24}
-                  color={isSelected ? COLORS.primary : "#475569"}
-                />
-              </View>
-              <Callout
-                tooltip
-                onPress={() => router.push(`/service/${service.id}`)}
-              >
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle} numberOfLines={2}>
-                    {service.title}
+              <View style={styles.callout}>
+                <Text style={styles.calloutTitle} numberOfLines={2}>
+                  {service.title}
+                </Text>
+                <Text style={styles.calloutCategory}>
+                  {service.category?.name ?? "Service"}
+                </Text>
+                <View style={styles.calloutRow}>
+                  <Text style={styles.calloutPrice}>
+                    {formatCalloutPrice(service.price)}
                   </Text>
-                  <Text style={styles.calloutCategory}>
-                    {service.category?.name ?? "Service"}
-                  </Text>
-                  <View style={styles.calloutRow}>
-                    <Text style={styles.calloutPrice}>
-                      {formatCalloutPrice(service.price)}
+                  <View style={styles.calloutRating}>
+                    <AntDesign name="star" size={11} color="#FCC419" />
+                    <Text style={styles.calloutRatingText}>
+                      {service.rating.toFixed(1)}
                     </Text>
-                    <View style={styles.calloutRating}>
-                      <AntDesign name="star" size={11} color="#FCC419" />
-                      <Text style={styles.calloutRatingText}>
-                        {service.rating.toFixed(1)}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.calloutTapHint}>
-                    <Text style={styles.calloutTapText}>
-                      Tap to view details
-                    </Text>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={11}
-                      color={COLORS.primary}
-                    />
                   </View>
                 </View>
-              </Callout>
-            </Marker>
-          );
-        })}
+                <View style={styles.calloutTapHint}>
+                  <Text style={styles.calloutTapText}>Tap to view details</Text>
+                  <Ionicons name="chevron-forward" size={11} color="#1877F2" />
+                </View>
+              </View>
+            </Callout>
+          </Marker>
+        ))}
       </MapView>
 
       {/* ── Search bar ── */}
-      <View style={styles.searchContainer}>
-        <View
-          style={[styles.searchBar, searchFocused && styles.searchBarFocused]}
-        >
-          <AntDesign name="search" size={17} color={COLORS.slate400} />
+      <View style={styles.searchBarWrapper}>
+        <View style={styles.searchBar}>
+          <AntDesign name="search" size={18} color={COLORS.slate400} />
           <TextInput
-            ref={searchInputRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-            placeholder="Search services on map…"
+            placeholder="Search services..."
             placeholderTextColor={COLORS.slate400}
             style={styles.searchInput}
             returnKeyType="search"
-            onSubmitEditing={() => {
-              if (suggestions.length > 0)
-                handleSelectSuggestion(suggestions[0]);
-            }}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity
-              onPress={handleClearSearch}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
               <AntDesign
                 name="close-circle"
-                size={15}
+                size={16}
                 color={COLORS.slate400}
               />
             </TouchableOpacity>
           )}
-        </View>
-
-        {showSuggestions && (
-          <View style={styles.suggestions}>
-            {suggestions.length === 0 ? (
-              <View style={styles.noResults}>
-                <Text style={styles.noResultsText}>No services found</Text>
-              </View>
-            ) : (
-              <FlatList
-                {...SMALL_LIST_PROPS}
-                data={suggestions}
-                keyExtractor={(item) => item.id}
-                keyboardShouldPersistTaps="always"
-                bounces={false}
-                renderItem={({ item, index }) => (
-                  <TouchableOpacity
-                    style={[
-                      styles.suggestionItem,
-                      index < suggestions.length - 1 && styles.suggestionBorder,
-                    ]}
-                    onPress={() => handleSelectSuggestion(item)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.suggestionIcon}>
-                      <Ionicons
-                        name="location-outline"
-                        size={16}
-                        color={COLORS.primary}
-                      />
-                    </View>
-                    <View style={styles.suggestionText}>
-                      <Text style={styles.suggestionTitle} numberOfLines={1}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.suggestionMeta} numberOfLines={1}>
-                        {item.category?.name ?? "Service"}
-                        {item._distanceKm != null ? (
-                          <Text style={styles.suggestionDistance}>
-                            {" · "}
-                            {formatDistance(item._distanceKm)}
-                          </Text>
-                        ) : (
-                          <Text style={styles.suggestionNoLocation}>
-                            {" · Enable location for distance"}
-                          </Text>
-                        )}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
+          <TouchableOpacity
+            onPress={() => setFilterModalVisible(true)}
+            activeOpacity={0.8}
+            style={styles.filterBtn}
+          >
+            <View
+              style={[
+                styles.filterIconWrap,
+                hasActiveFilters && styles.filterIconWrapActive,
+              ]}
+            >
+              <AntDesign
+                name="filter"
+                size={18}
+                color={hasActiveFilters ? "#fff" : COLORS.slate500}
               />
-            )}
-          </View>
-        )}
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Service count badge ── */}
-      {!showSuggestions && (
-        <View style={[styles.countBadge, { bottom: NAV_CLEARANCE }]}>
-          <Ionicons name="location" size={13} color={COLORS.primary} />
-          <Text style={styles.countText}>
-            {services.length} service{services.length !== 1 ? "s" : ""} on map
-          </Text>
-        </View>
-      )}
+      <View style={styles.countBadge}>
+        <Ionicons name="location" size={13} color="#1877F2" />
+        <Text style={styles.countText}>
+          {services.length} service{services.length !== 1 ? "s" : ""} on map
+        </Text>
+      </View>
 
       {/* ── Recenter button ── */}
       <TouchableOpacity
-        style={[
-          styles.recenterBtn,
-          { bottom: NAV_CLEARANCE + 54 },
-          centeredOnUser && styles.recenterBtnActive,
-        ]}
+        style={[styles.recenterBtn, centeredOnUser && styles.recenterBtnActive]}
         onPress={handleRecenter}
         activeOpacity={0.8}
       >
         <Ionicons
           name="locate"
           size={22}
-          color={centeredOnUser ? "#fff" : COLORS.primary}
+          color={centeredOnUser ? "#fff" : "#1877F2"}
         />
       </TouchableOpacity>
 
-      {/* ── Location error banner ── */}
+      {/* ── No location warning ── */}
       {locationError && (
-        <View style={[styles.locationWarning, { bottom: NAV_CLEARANCE }]}>
+        <View style={styles.locationWarning}>
           <Ionicons name="warning-outline" size={14} color="#b45309" />
           <Text style={styles.locationWarningText}>
-            Location permission denied — showing distances from profile location
+            Location permission denied — live tracking unavailable
           </Text>
         </View>
       )}
@@ -513,14 +399,26 @@ export default function MapScreen({ active = false }: { active?: boolean }) {
         <View style={styles.emptyOverlay}>
           <View style={styles.emptyCard}>
             <Ionicons name="map-outline" size={32} color={COLORS.slate400} />
-            <Text style={styles.emptyTitle}>No pinned services yet</Text>
+            <Text style={styles.emptyTitle}>
+              {shouldFitFilteredResults
+                ? "No matching services on the map"
+                : "No pinned services yet"}
+            </Text>
             <Text style={styles.emptyBody}>
-              Services will appear here once providers pin their location when
-              posting.
+              {shouldFitFilteredResults
+                ? "Try adjusting your search or filters."
+                : "Services will appear here once providers pin their location when posting."}
             </Text>
           </View>
         </View>
       )}
+
+      <FilterBottomSheet
+        visible={filterModalVisible}
+        onClose={() => setFilterModalVisible(false)}
+        onApply={onFiltersChange}
+        currentFilters={filters}
+      />
     </View>
   );
 }
@@ -537,8 +435,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#64748b",
   },
-
-  // ── User marker ──
+  // Search bar
+  searchBarWrapper: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    right: 12,
+    zIndex: 20,
+    elevation: 8,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 3,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    fontSize: 15,
+    color: "#0f172a",
+  },
+  filterBtn: {
+    marginLeft: 8,
+  },
+  filterIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.slate100,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterIconWrapActive: {
+    backgroundColor: COLORS.primary,
+  },
+  // User marker
   userMarkerWrapper: {
     width: 28,
     height: 28,
@@ -561,25 +506,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "rgba(239,68,68,0.2)",
   },
-  profileMarkerDot: {
-    backgroundColor: "#64748b",
-  },
-  profileMarkerPulse: {
-    backgroundColor: "rgba(100,116,139,0.2)",
-  },
-
-  // ── Service pins ──
-  pin: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  // ── Callout ──
+  // Callout
   callout: {
     width: 200,
     backgroundColor: "#fff",
     borderRadius: 14,
     padding: 12,
+    // Shadow
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -598,7 +531,7 @@ const styles = StyleSheet.create({
   },
   calloutCategory: {
     fontSize: 11,
-    color: COLORS.primary,
+    color: "#1877F2",
     fontWeight: "500",
     marginBottom: 6,
   },
@@ -638,138 +571,44 @@ const styles = StyleSheet.create({
   },
   calloutTapText: {
     fontSize: 11,
-    color: COLORS.primary,
+    color: "#1877F2",
     fontWeight: "500",
   },
-
-  // ── Search ──
-  searchContainer: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 16 : 12,
-    left: 12,
-    right: 12,
-    zIndex: 10,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === "ios" ? 11 : 8,
-    gap: 8,
-  },
-  searchBarFocused: {
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#0f172a",
-    padding: 0,
-  },
-
-  // ── Suggestions dropdown ──
-  suggestions: {
-    marginTop: 6,
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    overflow: "hidden",
-    maxHeight: 320,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
-        shadowRadius: 12,
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  suggestionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  suggestionBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.slate200,
-  },
-  suggestionIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: "#eff6ff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  suggestionText: {
-    flex: 1,
-  },
-  suggestionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#0f172a",
-    marginBottom: 2,
-  },
-  suggestionMeta: {
-    fontSize: 12,
-    color: COLORS.slate500,
-  },
-  suggestionDistance: {
-    color: COLORS.primary,
-    fontWeight: "500",
-  },
-  suggestionNoLocation: {
-    color: COLORS.slate400,
-    fontStyle: "italic",
-  },
-  noResults: {
-    paddingVertical: 20,
-    alignItems: "center",
-  },
-  noResultsText: {
-    fontSize: 13,
-    color: COLORS.slate400,
-  },
-
-  // ── Count badge ──
+  // Count badge
   countBadge: {
     position: "absolute",
+    top: 70,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    gap: 5,
+    backgroundColor: "#fff",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 20,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.12,
         shadowRadius: 4,
       },
-      android: { elevation: 2 },
+      android: { elevation: 3 },
     }),
   },
   countText: {
     fontSize: 12,
     fontWeight: "600",
-    color: COLORS.primary,
+    color: "#334155",
   },
-
-  // ── Recenter button ──
+  // Recenter button
   recenterBtn: {
     position: "absolute",
+    bottom: 24,
     right: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
@@ -784,41 +623,43 @@ const styles = StyleSheet.create({
     }),
   },
   recenterBtnActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: "#1877F2",
   },
-
-  // ── Location warning ──
+  // Location warning
   locationWarning: {
     position: "absolute",
+    bottom: 84,
     left: 16,
-    right: 16,
+    right: 72,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#fef3c7",
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 10,
   },
   locationWarningText: {
-    flex: 1,
-    fontSize: 12,
+    fontSize: 11,
     color: "#92400e",
+    flex: 1,
   },
-
-  // ── Empty overlay ──
+  // Empty overlay
   emptyOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-end",
+    paddingBottom: 90,
     pointerEvents: "none",
   },
   emptyCard: {
-    backgroundColor: "rgba(255,255,255,0.95)",
+    backgroundColor: "#fff",
     borderRadius: 16,
-    padding: 24,
+    padding: 20,
+    marginHorizontal: 32,
     alignItems: "center",
-    maxWidth: 280,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -826,19 +667,19 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 8,
       },
-      android: { elevation: 4 },
+      android: { elevation: 3 },
     }),
   },
   emptyTitle: {
-    marginTop: 12,
     fontSize: 15,
     fontWeight: "700",
     color: "#0f172a",
+    marginTop: 8,
+    marginBottom: 4,
   },
   emptyBody: {
-    marginTop: 6,
-    fontSize: 13,
-    color: COLORS.slate500,
+    fontSize: 12,
+    color: "#64748b",
     textAlign: "center",
     lineHeight: 18,
   },

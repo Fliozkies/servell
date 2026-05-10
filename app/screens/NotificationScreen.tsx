@@ -105,9 +105,11 @@ function getNotifAccent(type: NotificationType): string {
 
 export default function NotificationScreen({
   onAllRead,
+  onUnreadCountChange,
   onBack,
 }: {
   onAllRead?: () => void;
+  onUnreadCountChange?: (count: number) => void;
   onBack?: () => void;
 }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -121,18 +123,22 @@ export default function NotificationScreen({
 
   const userIdRef = useRef<string | null>(null);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const data = await fetchNotifications();
-      setNotifications(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const data = await fetchNotifications();
+        setNotifications(data);
+        onUnreadCountChange?.(data.filter((n) => !n.is_read).length);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [onUnreadCountChange],
+  );
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
@@ -163,10 +169,11 @@ export default function NotificationScreen({
   }, [load]);
 
   const handleMarkRead = async (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
+    const next = notifications.map((n) =>
+      n.id === id ? { ...n, is_read: true } : n,
     );
-    onAllRead?.(); // re-fetch badge count in parent
+    setNotifications(next);
+    onUnreadCountChange?.(next.filter((n) => !n.is_read).length);
     try {
       await markNotificationRead(id);
     } catch {
@@ -191,7 +198,9 @@ export default function NotificationScreen({
         text: "Remove",
         style: "destructive",
         onPress: async () => {
-          setNotifications((prev) => prev.filter((n) => n.id !== id));
+          const next = notifications.filter((n) => n.id !== id);
+          setNotifications(next);
+          onUnreadCountChange?.(next.filter((n) => !n.is_read).length);
           try {
             await deleteNotification(id);
           } catch {

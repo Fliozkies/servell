@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import "../../global.css";
+import { PushNotificationProvider } from "../../lib/components/PushNotificationProvider";
 import { ScrollDirectionProvider } from "../../lib/context/ScrollDirectionContext";
 /**
  * Layout for the authenticated part of the app.
@@ -9,9 +10,11 @@ import { ScrollDirectionProvider } from "../../lib/context/ScrollDirectionContex
 export default function MainLayout() {
   return (
     <ScrollDirectionProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-      </Stack>
+      <PushNotificationProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+        </Stack>
+      </PushNotificationProvider>
     </ScrollDirectionProvider>
   );
 }

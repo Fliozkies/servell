@@ -1,11 +1,11 @@
 import { AntDesign } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ArrowLeft, Clock, Trash2, X } from "lucide-react-native";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Dimensions,
   FlatList,
+  Image,
   RefreshControl,
   ScrollView,
   Text,
@@ -17,8 +17,6 @@ import {
 import { router } from "expo-router";
 import { searchAndFilterServices } from "../../lib/api/services.api";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
-import { CachedImage } from "../../lib/components/ui/CachedImage";
-import { GRID_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useDebounce } from "../../lib/hooks/useDebounce";
 import { ServiceWithDetails } from "../../lib/types/database.types";
@@ -30,7 +28,6 @@ const COLUMN_WIDTH = (width - 48) / 2;
 
 const SEARCH_HISTORY_KEY = "@servell_search_history";
 const MAX_HISTORY_ITEMS = 20;
-const SEARCH_PAGE_SIZE = 20;
 
 // ── Mini card colours ────────────────────────────────────────────────────────
 const MINI_CARD_BG: Record<string, string> = {
@@ -56,11 +53,7 @@ function formatAuthor(service: ServiceWithDetails): string {
 }
 
 // ── Grid Card ─────────────────────────────────────────────────────────────────
-const GridCard = memo(function GridCard({
-  service,
-}: {
-  service: ServiceWithDetails;
-}) {
+const GridCard = ({ service }: { service: ServiceWithDetails }) => {
   const catName = service.category?.name ?? "Others";
   const bg = MINI_CARD_BG[catName] ?? "#f1f5f9";
   const stroke = MINI_CARD_STROKE[catName] ?? "#64748b";
@@ -82,8 +75,8 @@ const GridCard = memo(function GridCard({
       {/* Image */}
       {service.image_url ? (
         <View style={{ height: 110, position: "relative" }}>
-          <CachedImage
-            uri={service.image_url}
+          <Image
+            source={{ uri: service.image_url }}
             style={{ height: 110, width: "100%" }}
           />
           {/* Rating overlay */}
@@ -187,10 +180,12 @@ const GridCard = memo(function GridCard({
       </View>
     </TouchableOpacity>
   );
-});
+};
 
 // ── Screen Props ──────────────────────────────────────────────────────────────
 type SearchScreenProps = {
+  searchQuery: string;
+  onSearchQueryChange: (text: string) => void;
   filters: FilterOptions;
   onFiltersChange: (filters: FilterOptions) => void;
   onBack: () => void;
@@ -198,17 +193,15 @@ type SearchScreenProps = {
 
 // ── Search Screen ─────────────────────────────────────────────────────────────
 export default function SearchScreen({
+  searchQuery,
+  onSearchQueryChange,
   filters,
   onFiltersChange,
   onBack,
 }: SearchScreenProps) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [services, setServices] = useState<ServiceWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const searchInputRef = useRef<TextInput>(null);
@@ -305,10 +298,6 @@ export default function SearchScreen({
   useEffect(() => {
     if (!isSearching) {
       setServices([]);
-      setPage(0);
-      setHasMore(false);
-      setLoading(false);
-      setRefreshing(false);
       return;
     }
 
@@ -326,14 +315,8 @@ export default function SearchScreen({
           location: filters.location,
           sortBy: filters.sortBy,
           userLocation: filters.userLocation,
-          limit: SEARCH_PAGE_SIZE,
-          page: 0,
         });
-        if (!cancelled) {
-          setServices(data);
-          setPage(0);
-          setHasMore(data.length === SEARCH_PAGE_SIZE);
-        }
+        if (!cancelled) setServices(data);
       } catch {
         // silently fail
       } finally {
@@ -360,102 +343,13 @@ export default function SearchScreen({
     isSearching,
   ]);
 
-  const onRefresh = useCallback(async () => {
-    if (!isSearching) return;
+  const onRefresh = () => {
     setRefreshing(true);
-    try {
-      const data = await searchAndFilterServices({
-        searchQuery: debouncedSearch,
-        categoryId: filters.categoryId,
-        minPrice: filters.priceRange.min,
-        maxPrice: filters.priceRange.max,
-        minRating: filters.minRating,
-        location: filters.location,
-        sortBy: filters.sortBy,
-        userLocation: filters.userLocation,
-        limit: SEARCH_PAGE_SIZE,
-        page: 0,
-      });
-      setServices(data);
-      setPage(0);
-      setHasMore(data.length === SEARCH_PAGE_SIZE);
-    } catch {
-      // silently fail
-    } finally {
-      setRefreshing(false);
-    }
-  }, [
-    debouncedSearch,
-    filters.categoryId,
-    filters.priceRange.min,
-    filters.priceRange.max,
-    filters.minRating,
-    filters.location,
-    filters.sortBy,
-    filters.userLocation,
-    isSearching,
-  ]);
+  };
 
-  const loadMoreResults = useCallback(async () => {
-    if (!isSearching || loading || loadingMore || refreshing || !hasMore)
-      return;
-    const nextPage = page + 1;
-    setLoadingMore(true);
-    try {
-      const data = await searchAndFilterServices({
-        searchQuery: debouncedSearch,
-        categoryId: filters.categoryId,
-        minPrice: filters.priceRange.min,
-        maxPrice: filters.priceRange.max,
-        minRating: filters.minRating,
-        location: filters.location,
-        sortBy: filters.sortBy,
-        userLocation: filters.userLocation,
-        limit: SEARCH_PAGE_SIZE,
-        page: nextPage,
-      });
-      setServices((prev) => [...prev, ...data]);
-      setPage(nextPage);
-      setHasMore(data.length === SEARCH_PAGE_SIZE);
-    } catch {
-      setHasMore(false);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [
-    debouncedSearch,
-    filters.categoryId,
-    filters.priceRange.min,
-    filters.priceRange.max,
-    filters.minRating,
-    filters.location,
-    filters.sortBy,
-    filters.userLocation,
-    hasMore,
-    isSearching,
-    loading,
-    loadingMore,
-    page,
-    refreshing,
-  ]);
-
-  const handleHistoryTap = useCallback((query: string) => {
-    setSearchQuery(query);
-  }, []);
-
-  const keyExtractor = useCallback((item: ServiceWithDetails) => item.id, []);
-  const renderGridItem = useCallback(
-    ({ item }: { item: ServiceWithDetails }) => <GridCard service={item} />,
-    [],
-  );
-  const renderFooter = useCallback(() => {
-    if (!loadingMore) return null;
-    return (
-      <View style={{ paddingVertical: 16, alignItems: "center" }}>
-        <ActivityIndicator size="small" color={COLORS.primary} />
-      </View>
-    );
-  }, [loadingMore]);
+  const handleHistoryTap = (query: string) => {
+    onSearchQueryChange(query);
+  };
 
   // ── Render search history ──────────────────────────────────────────────────
   const renderSearchHistory = () => {
@@ -595,7 +489,7 @@ export default function SearchScreen({
           <TextInput
             ref={searchInputRef}
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={onSearchQueryChange}
             placeholder="Search services..."
             placeholderTextColor={COLORS.slate400}
             style={{
@@ -608,7 +502,7 @@ export default function SearchScreen({
             returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <TouchableOpacity onPress={() => onSearchQueryChange("")}>
               <AntDesign
                 name="close-circle"
                 size={16}
@@ -736,16 +630,11 @@ export default function SearchScreen({
         ) : (
           /* Results grid */
           <FlatList
-            {...GRID_LIST_PROPS}
             data={services}
             numColumns={2}
             columnWrapperStyle={{ justifyContent: "space-between" }}
             contentContainerStyle={{ padding: 16 }}
-            keyExtractor={keyExtractor}
-            renderItem={renderGridItem}
-            ListFooterComponent={renderFooter}
-            onEndReached={loadMoreResults}
-            onEndReachedThreshold={0.4}
+            keyExtractor={(item) => item.id}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -754,6 +643,7 @@ export default function SearchScreen({
                 tintColor={COLORS.primary}
               />
             }
+            renderItem={({ item }) => <GridCard service={item} />}
           />
         )}
       </View>

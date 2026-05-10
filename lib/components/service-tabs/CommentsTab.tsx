@@ -6,13 +6,14 @@ import {
   Alert,
   FlatList,
   RefreshControl,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fetchServiceComments } from "../../api/comments.api";
-import { VERTICAL_LIST_PROPS } from "../../constants/performance";
 import {
   CommentSortOption,
   CommentWithDetails,
@@ -49,6 +50,7 @@ export default function CommentsTab({
   const [highlightedCommentId, setHighlightedCommentId] = useState<
     string | undefined
   >(highlightCommentId);
+  const insets = useSafeAreaInsets();
 
   // Cache flag — only load once on first mount, unless manually refreshed
   const hasLoadedRef = useRef(false);
@@ -140,6 +142,8 @@ export default function CommentsTab({
     setSortBy(newSort);
     setPage(0);
     setHasMore(true);
+    // Reload with new sort
+    setTimeout(() => loadComments(0), 100);
   };
 
   const handleAddComment = () => {
@@ -191,17 +195,6 @@ export default function CommentsTab({
 
   const renderHeader = () => (
     <View className="bg-white border-b border-slate-100">
-      {/* Add Comment bar */}
-      <TouchableOpacity
-        onPress={handleAddComment}
-        activeOpacity={0.75}
-        className="mx-4 mt-4 mb-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3"
-      >
-        <Text className="text-sm text-slate-400 flex-1">
-          Share your thoughts...
-        </Text>
-      </TouchableOpacity>
-
       {/* Sort pills */}
       <View className="flex-row px-4 py-2">
         {(["newest", "oldest", "most_liked"] as const).map((option) => {
@@ -266,7 +259,6 @@ export default function CommentsTab({
   return (
     <View className="flex-1 bg-slate-50">
       <FlatList
-        {...VERTICAL_LIST_PROPS}
         data={comments}
         ref={flatListRef}
         keyExtractor={(item) => item.id}
@@ -305,8 +297,28 @@ export default function CommentsTab({
             tintColor="#1877F2"
           />
         }
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingBottom: 76 + Math.max(insets.bottom, 8),
+        }}
       />
+
+      <View
+        style={[
+          styles.bottomComposer,
+          { paddingBottom: Math.max(insets.bottom, 8) },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={handleAddComment}
+          activeOpacity={0.75}
+          style={styles.commentInputButton}
+        >
+          <Text style={styles.commentInputPlaceholder}>
+            Share your thoughts...
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Add Comment Modal */}
       <KeyboardAvoidingView>
@@ -324,3 +336,30 @@ export default function CommentsTab({
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  bottomComposer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+  commentInputButton: {
+    minHeight: 48,
+    justifyContent: "center",
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+  },
+  commentInputPlaceholder: {
+    color: "#94a3b8",
+    fontSize: 14,
+  },
+});

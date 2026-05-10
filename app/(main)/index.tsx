@@ -1,6 +1,6 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/api/supabase";
 import BottomNav from "../../lib/components/BottomNav";
@@ -38,13 +38,13 @@ export default function MainScreen() {
   const [previousTab, setPreviousTab] = useState<PageName>("Services");
 
   // Search / filter state (Services tab)
+  const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
 
   // Profile location fallback — loaded once on mount from the user's profile.
   // Used as userLocation when GPS is not granted and "nearest" sort is active.
   const [profileLocation, setProfileLocation] = useState<UserLocation>(null);
-  const [isVerified, setIsVerified] = useState(false);
 
   // Refresh keys
   const [servicesRefreshKey, setServicesRefreshKey] = useState(0);
@@ -53,7 +53,8 @@ export default function MainScreen() {
   const [notificationsRefreshKey, setNotificationsRefreshKey] = useState(0);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
-  const { counts, resetNotifications, refreshMessages } = useUnreadCounts();
+  const { counts, resetNotifications, syncNotifications, refreshMessages } =
+    useUnreadCounts();
 
   // ── Load profile location once on mount ─────────────────────────────────
   useEffect(() => {
@@ -65,7 +66,7 @@ export default function MainScreen() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("location_lat, location_lng, physis_verified")
+        .select("location_lat, location_lng")
         .eq("id", user.id)
         .single();
 
@@ -75,7 +76,6 @@ export default function MainScreen() {
           longitude: profile.location_lng,
         });
       }
-      setIsVerified(profile?.physis_verified ?? false);
     }
     loadProfileLocation();
   }, []);
@@ -105,14 +105,6 @@ export default function MainScreen() {
   );
 
   const handleTabPress = (tab: PageName) => {
-    if (tab === "Post" && !isVerified) {
-      Alert.alert(
-        "Verification Required",
-        "You need to verify your account before posting services. Go to Profile → Settings → Verify Account.",
-        [{ text: "OK" }],
-      );
-      return;
-    }
     if (tab === activeTab) {
       switch (tab) {
         case "Services":
@@ -162,20 +154,24 @@ export default function MainScreen() {
           }}
         >
           <ServicesScreen
-            searchQuery=""
+            key={servicesRefreshKey}
+            searchQuery={searchQuery}
             filterModalVisible={filterModalVisible}
             onFilterModalClose={() => setFilterModalVisible(false)}
             filters={effectiveFilters}
             onFiltersChange={setFilters}
             effectiveUserLocation={effectiveUserLocation}
-            refreshKey={servicesRefreshKey}
           />
         </View>
 
         <View
           style={{ flex: 1, display: activeTab === "Map" ? "flex" : "none" }}
         >
-          <MapScreen key={mapRefreshKey} active={activeTab === "Map"} />
+          <MapScreen
+            key={mapRefreshKey}
+            filters={effectiveFilters}
+            onFiltersChange={setFilters}
+          />
         </View>
 
         <View
@@ -196,6 +192,7 @@ export default function MainScreen() {
           <NotificationScreen
             key={notificationsRefreshKey}
             onAllRead={resetNotifications}
+            onUnreadCountChange={syncNotifications}
             onBack={() => setActiveTab(previousTab)}
           />
         </View>
@@ -206,28 +203,24 @@ export default function MainScreen() {
             display: activeTab === "Profile" ? "flex" : "none",
           }}
         >
-          <ProfileScreen
-            onVerified={() => setIsVerified(true)}
-            refreshKey={profileRefreshKey}
-          />
+          <ProfileScreen key={profileRefreshKey} />
         </View>
 
         {activeTab === "Post" && (
           <CreateServiceScreen
-            onServiceCreated={() => {
-              setServicesRefreshKey((prev) => prev + 1);
-              setProfileRefreshKey((prev) => prev + 1);
-              setActiveTab("Services");
-            }}
+            onServiceCreated={() => setActiveTab("Services")}
             onCancel={() => setActiveTab("Services")}
           />
         )}
 
         {activeTab === "Search" && (
           <SearchScreen
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
             filters={effectiveFilters}
             onFiltersChange={setFilters}
             onBack={() => {
+              setSearchQuery("");
               setActiveTab(previousTab);
             }}
           />
@@ -240,7 +233,6 @@ export default function MainScreen() {
           onTabPress={handleTabPress}
           unreadMessages={counts.messages}
           unreadNotifications={counts.notifications}
-          isVerified={isVerified}
         />
       )}
     </SafeAreaView>

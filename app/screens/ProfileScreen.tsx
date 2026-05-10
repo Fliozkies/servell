@@ -1,7 +1,6 @@
 // app/screens/ProfileScreen.tsx
 // Previously: app/juarez_app/pages/Profile_page.tsx
 import { AntDesign } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import {
   AlertCircle,
@@ -30,6 +29,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   Modal,
   RefreshControl,
   ScrollView,
@@ -41,7 +41,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   fetchUserServices,
-  invalidateServicesCache,
   updateServiceStatus,
 } from "../../lib/api/services.api";
 import {
@@ -56,7 +55,6 @@ import {
   ProfileScreenSkeleton,
   SkeletonBox,
 } from "../../lib/components/SkeletonLoader";
-import { CachedImage } from "../../lib/components/ui/CachedImage";
 import { FormField } from "../../lib/components/ui/FormField";
 import { ProfileAvatar } from "../../lib/components/ui/ProfileAvatar";
 import { TabBar } from "../../lib/components/ui/TabBar";
@@ -74,6 +72,12 @@ import {
 } from "../../lib/types/database.types";
 import { formatDisplayName, formatPrice } from "../../lib/utils/format";
 import { uploadImage } from "../../lib/utils/imageUtils";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  getNotificationPreferences,
+  NotificationPreferences,
+  saveNotificationPreferences as persistNotificationPreferences,
+} from "../../lib/utils/notificationPreferences";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -94,13 +98,7 @@ async function handleLogout() {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
-export default function ProfileScreen({
-  onVerified,
-  refreshKey,
-}: {
-  onVerified?: () => void;
-  refreshKey?: number;
-}) {
+export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -123,10 +121,6 @@ export default function ProfileScreen({
   const [isProfileImageModalVisible, setIsProfileImageModalVisible] =
     useState(false);
 
-  const subscriptionsLoadedRef = useRef(false);
-  const reviewsLoadedRef = useRef(false);
-  const servicesLoadedRef = useRef(false);
-  const lastRefreshKeyRef = useRef(refreshKey);
   const actionSheetSlide = useRef(new Animated.Value(0)).current;
   const actionSheetBackdrop = useRef(new Animated.Value(0)).current;
 
@@ -150,22 +144,18 @@ export default function ProfileScreen({
     setProfileLoading(false);
   }, []);
 
-  const loadServices = useCallback(
-    async (force = false) => {
-      if (!currentUserId) return;
-      if (!servicesLoadedRef.current) setLoadingServices(true);
-      try {
-        const data = await fetchUserServices(currentUserId, { force });
-        setServices(data.filter((s) => s.status !== "deleted"));
-        servicesLoadedRef.current = true;
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoadingServices(false);
-      }
-    },
-    [currentUserId],
-  );
+  const loadServices = useCallback(async () => {
+    if (!currentUserId) return;
+    setLoadingServices(true);
+    try {
+      const data = await fetchUserServices(currentUserId);
+      setServices(data.filter((s) => s.status !== "deleted"));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingServices(false);
+    }
+  }, [currentUserId]);
 
   const loadSubscriptions = useCallback(async () => {
     setLoadingSubscriptions(true);
@@ -199,42 +189,42 @@ export default function ProfileScreen({
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+  const handleTabPress = useCallback(
+    (tab: ProfileTab) => {
+      if (tab === activeTab) return;
+
+      if (tab === "posts") setLoadingServices(true);
+      else if (tab === "subscriptions") setLoadingSubscriptions(true);
+      else setLoadingReviews(true);
+
+      setActiveTab(tab);
+    },
+    [activeTab],
+  );
+
   useEffect(() => {
-    if (currentUserId) loadServices();
-  }, [currentUserId, loadServices]);
-  useEffect(() => {
-    if (activeTab === "subscriptions" && !subscriptionsLoadedRef.current) {
-      subscriptionsLoadedRef.current = true;
+    if (!currentUserId) return;
+
+    if (activeTab === "posts") {
+      loadServices();
+    } else if (activeTab === "subscriptions") {
       loadSubscriptions();
-    }
-    if (activeTab === "reviews" && !reviewsLoadedRef.current) {
-      reviewsLoadedRef.current = true;
+    } else if (activeTab === "reviews") {
       loadReviews();
     }
-  }, [activeTab, loadReviews, loadSubscriptions]);
+  }, [activeTab, currentUserId, loadReviews, loadServices, loadSubscriptions]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProfile();
-    if (activeTab === "posts") await loadServices(true);
+    if (activeTab === "posts") await loadServices();
     else if (activeTab === "subscriptions") {
-      subscriptionsLoadedRef.current = true;
       await loadSubscriptions();
     } else if (activeTab === "reviews") {
-      reviewsLoadedRef.current = true;
       await loadReviews();
     }
     setRefreshing(false);
   }, [activeTab, loadProfile, loadServices, loadSubscriptions, loadReviews]);
-
-  useEffect(() => {
-    if (refreshKey == null || lastRefreshKeyRef.current === refreshKey) {
-      return;
-    }
-
-    lastRefreshKeyRef.current = refreshKey;
-    onRefresh();
-  }, [onRefresh, refreshKey]);
 
   // ── Profile image update ───────────────────────────────────────────────────
 
@@ -357,12 +347,10 @@ export default function ProfileScreen({
                   .from("services")
                   .update({ status: "deleted" })
                   .eq("id", captured.id);
-                if (!error) {
-                  invalidateServicesCache();
+                if (!error)
                   setServices((prev) =>
                     prev.filter((s) => s.id !== captured.id),
                   );
-                }
               },
             },
           ],
@@ -397,10 +385,12 @@ export default function ProfileScreen({
   const activeServiceCount = services.filter(
     (s) => s.status === "active",
   ).length;
+  const reviewedServices = services.filter((s) => s.review_count > 0);
   const avgRating =
-    services.length > 0
+    reviewedServices.length > 0
       ? (
-          services.reduce((sum, s) => sum + s.rating, 0) / services.length
+          reviewedServices.reduce((sum, s) => sum + s.rating, 0) /
+          reviewedServices.length
         ).toFixed(1)
       : "—";
 
@@ -473,7 +463,7 @@ export default function ProfileScreen({
         <TabBar
           tabs={PROFILE_TABS}
           activeTab={activeTab}
-          onTabPress={setActiveTab}
+          onTabPress={handleTabPress}
         />
 
         {/* Tab content */}
@@ -733,7 +723,6 @@ export default function ProfileScreen({
         profile={profile}
         onClose={() => setIsSettingsVisible(false)}
         onProfileUpdated={setProfile}
-        onVerified={onVerified}
       />
 
       <ProfileImageModal
@@ -915,7 +904,7 @@ const SubscriptionRow = ({
       >
         <UserMinus size={14} color={COLORS.slate500} />
         <Text className="text-xs font-medium text-slate-600 ml-1">
-          Unsubscribe
+          Unfollow
         </Text>
       </TouchableOpacity>
     </View>
@@ -976,7 +965,7 @@ const EditServiceModal = ({
   const handleSave = async () => {
     if (
       !validateServiceForm({
-        serviceType: service.latitude != null ? "physical" : "digital",
+        serviceType: form.serviceType,
         title: form.title,
         description: form.description,
         location: form.location,
@@ -1006,7 +995,6 @@ const EditServiceModal = ({
         .select()
         .single();
       if (error) throw error;
-      invalidateServicesCache();
       onSaved(data);
       Alert.alert("Saved!", "Your service has been updated.");
     } catch {
@@ -1043,9 +1031,13 @@ const EditServiceModal = ({
             style={{ height: 160 }}
           >
             {form.selectedImage || service.image_url ? (
-              <CachedImage
-                uri={form.selectedImage?.uri ?? service.image_url ?? undefined}
-                style={{ width: "100%", height: "100%" }}
+              <Image
+                source={{
+                  uri:
+                    form.selectedImage?.uri ?? service.image_url ?? undefined,
+                }}
+                className="w-full h-full"
+                resizeMode="cover"
               />
             ) : (
               <View className="flex-1 items-center justify-center">
@@ -1163,122 +1155,49 @@ const SettingsModal = ({
   profile,
   onClose,
   onProfileUpdated,
-  onVerified,
 }: {
   visible: boolean;
   profile: Profile | null;
   onClose: () => void;
   onProfileUpdated: (p: Profile) => void;
-  onVerified?: () => void;
 }) => {
   const [section, setSection] = useState<SettingsSection>("main");
   const [firstName, setFirstName] = useState(profile?.first_name ?? "");
   const [lastName, setLastName] = useState(profile?.last_name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [saving, setSaving] = useState(false);
-  const [verifying, setVerifying] = useState(false);
 
-  const handleVerify = async () => {
-    if (!profile || profile.physis_verified) return;
-    Alert.alert(
-      "Verify Account",
-      "By proceeding, you confirm that you are a real person. Your account will be marked as verified.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Verify Now",
-          onPress: async () => {
-            setVerifying(true);
-            try {
-              const { data, error } = await supabase
-                .from("profiles")
-                .update({ physis_verified: true })
-                .eq("id", profile.id)
-                .select()
-                .single();
-              if (error) throw error;
-              onProfileUpdated(data);
-              onVerified?.();
-              Alert.alert(
-                "Verified! ✅",
-                "Your account has been verified. You can now post services.",
-              );
-            } catch (err: any) {
-              Alert.alert(
-                "Error",
-                err?.message ?? "Verification failed. Please try again.",
-              );
-            } finally {
-              setVerifying(false);
-            }
-          },
-        },
-      ],
-    );
-  };
+  const [notificationPreferences, setNotificationPreferences] =
+    useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
 
-  // Notification preferences state
-  const [notifMessages, setNotifMessages] = useState(true);
-  const [notifReviews, setNotifReviews] = useState(true);
-  const [notifComments, setNotifComments] = useState(true);
-  const [notifSubscriptions, setNotifSubscriptions] = useState(true);
-  const [notifServiceUpdates, setNotifServiceUpdates] = useState(true);
-
-  // Load notification preferences from AsyncStorage on mount
   useEffect(() => {
-    loadNotificationPreferences();
+    let mounted = true;
+
+    getNotificationPreferences()
+      .then((preferences) => {
+        if (mounted) setNotificationPreferences(preferences);
+      })
+      .catch((error) => {
+        console.error("Error loading notification preferences:", error);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
-  const saveNotificationPreferences = useCallback(async () => {
-    try {
-      const prefs = {
-        messages: notifMessages,
-        reviews: notifReviews,
-        comments: notifComments,
-        subscriptions: notifSubscriptions,
-        serviceUpdates: notifServiceUpdates,
-      };
-      await AsyncStorage.setItem(
-        "notification_preferences",
-        JSON.stringify(prefs),
-      );
-    } catch (error) {
-      console.error("Error saving notification preferences:", error);
-    }
-  }, [
-    notifComments,
-    notifMessages,
-    notifReviews,
-    notifServiceUpdates,
-    notifSubscriptions,
-  ]);
 
-  // Save notification preferences whenever they change
-  useEffect(() => {
-    saveNotificationPreferences();
-  }, [
-    notifMessages,
-    notifReviews,
-    notifComments,
-    notifSubscriptions,
-    notifServiceUpdates,
-    saveNotificationPreferences,
-  ]);
-
-  const loadNotificationPreferences = async () => {
-    try {
-      const stored = await AsyncStorage.getItem("notification_preferences");
-      if (stored) {
-        const prefs = JSON.parse(stored);
-        setNotifMessages(prefs.messages ?? true);
-        setNotifReviews(prefs.reviews ?? true);
-        setNotifComments(prefs.comments ?? true);
-        setNotifSubscriptions(prefs.subscriptions ?? true);
-        setNotifServiceUpdates(prefs.serviceUpdates ?? true);
-      }
-    } catch (error) {
-      console.error("Error loading notification preferences:", error);
-    }
-  };
+  const handleNotificationPreferenceToggle = useCallback(
+    (key: keyof NotificationPreferences, value: boolean) => {
+      setNotificationPreferences((prev) => {
+        const next = { ...prev, [key]: value };
+        void persistNotificationPreferences(next).catch((error) => {
+          console.error("Error saving notification preferences:", error);
+        });
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -1459,94 +1378,6 @@ const SettingsModal = ({
                   style={{ minHeight: 100 }}
                 />
               </FormField>
-              <FormField label="Location">
-                <View
-                  className="border border-slate-200 rounded-xl px-4 py-3 bg-slate-50"
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-                >
-                  <MapPin size={16} color={COLORS.slate400} />
-                  <Text
-                    style={{
-                      flex: 1,
-                      fontSize: 15,
-                      color: profile?.location_text
-                        ? COLORS.slate900
-                        : COLORS.slate400,
-                    }}
-                  >
-                    {profile?.location_text ?? "No location set"}
-                  </Text>
-                </View>
-                <Text
-                  style={{ fontSize: 12, color: COLORS.slate400, marginTop: 4 }}
-                >
-                  Set during registration. Contact support to change.
-                </Text>
-              </FormField>
-            </View>
-          )}
-          {section === "verify" && (
-            <View className="p-5">
-              {profile?.physis_verified ? (
-                <View className="items-center py-8 gap-4">
-                  <View className="w-20 h-20 rounded-full bg-green-100 items-center justify-center">
-                    <Shield size={40} color={COLORS.success} />
-                  </View>
-                  <Text className="text-xl font-bold text-slate-900">
-                    Account Verified
-                  </Text>
-                  <Text className="text-sm text-slate-500 text-center">
-                    Your account has been verified. You can post services on
-                    Servell.
-                  </Text>
-                </View>
-              ) : (
-                <View className="gap-4">
-                  <View className="items-center py-6 gap-3">
-                    <View className="w-20 h-20 rounded-full bg-orange-100 items-center justify-center">
-                      <Shield size={40} color="#f97316" />
-                    </View>
-                    <Text className="text-xl font-bold text-slate-900">
-                      Verify Your Account
-                    </Text>
-                    <Text className="text-sm text-slate-500 text-center leading-5">
-                      Verification lets you post services and builds trust with
-                      buyers on the platform.
-                    </Text>
-                  </View>
-                  <View className="bg-slate-50 border border-slate-100 rounded-2xl p-4 gap-3">
-                    <Text className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                      What you get
-                    </Text>
-                    {[
-                      "✅  Post and manage services",
-                      "🔒  Verified badge on your profile",
-                      "📈  Higher trust from buyers",
-                    ].map((item) => (
-                      <Text key={item} className="text-sm text-slate-700">
-                        {item}
-                      </Text>
-                    ))}
-                  </View>
-                  <TouchableOpacity
-                    onPress={handleVerify}
-                    disabled={verifying}
-                    className="bg-[#1877F2] rounded-2xl py-4 items-center"
-                  >
-                    {verifying ? (
-                      <ActivityIndicator color="white" />
-                    ) : (
-                      <Text className="text-white font-bold text-base">
-                        Verify My Account
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                  <Text className="text-xs text-slate-400 text-center">
-                    By verifying, you confirm you are a real person and agree to
-                    our Terms of Service.
-                  </Text>
-                </View>
-              )}
             </View>
           )}
           {section === "notifPrefs" && (
@@ -1558,36 +1389,46 @@ const SettingsModal = ({
                 icon={<Bell size={20} color={COLORS.primary} />}
                 label="New Messages"
                 description="Get notified when you receive new messages"
-                value={notifMessages}
-                onToggle={setNotifMessages}
+                value={notificationPreferences.messages}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("messages", value)
+                }
               />
               <NotificationToggle
                 icon={<Star size={20} color="#f59e0b" />}
                 label="Reviews & Ratings"
                 description="Alerts when someone reviews your services"
-                value={notifReviews}
-                onToggle={setNotifReviews}
+                value={notificationPreferences.reviews}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("reviews", value)
+                }
               />
               <NotificationToggle
                 icon={<List size={20} color={COLORS.info} />}
                 label="Comments"
                 description="Notifications for comments on your services"
-                value={notifComments}
-                onToggle={setNotifComments}
+                value={notificationPreferences.comments}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("comments", value)
+                }
               />
               <NotificationToggle
                 icon={<Users size={20} color={COLORS.success} />}
                 label="New Subscribers"
                 description="Know when someone subscribes to your services"
-                value={notifSubscriptions}
-                onToggle={setNotifSubscriptions}
+                value={notificationPreferences.subscriptions}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("subscriptions", value)
+                }
               />
               <NotificationToggle
                 icon={<BarChart3 size={20} color="#8b5cf6" />}
                 label="Service Updates"
                 description="Updates about services you subscribe to"
-                value={notifServiceUpdates}
-                onToggle={setNotifServiceUpdates}
+                value={notificationPreferences.serviceUpdates}
+                onToggle={(value) =>
+                  handleNotificationPreferenceToggle("serviceUpdates", value)
+                }
               />
             </View>
           )}
