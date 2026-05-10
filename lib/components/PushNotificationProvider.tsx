@@ -101,6 +101,8 @@ function getNotificationsModule(): LocalNotificationsModule | null {
   }
 
   try {
+    // Keep these lazy so Expo Go or stale native builds do not crash at module load.
+    /* eslint-disable @typescript-eslint/no-require-imports */
     const channelManagerTypes = require(
       "expo-notifications/build/NotificationChannelManager.types",
     );
@@ -118,6 +120,7 @@ function getNotificationsModule(): LocalNotificationsModule | null {
     const channel = require(
       "expo-notifications/build/setNotificationChannelAsync",
     );
+    /* eslint-enable @typescript-eslint/no-require-imports */
 
     notificationsModule = {
       AndroidImportance: channelManagerTypes.AndroidImportance,
@@ -173,7 +176,6 @@ async function ensureNotificationPermissions(): Promise<boolean> {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#1877F2",
       showBadge: true,
-      sound: "default",
     });
   }
 
@@ -409,7 +411,7 @@ export function PushNotificationProvider({
         content: {
           title: notification.title,
           body: notification.body,
-          sound: "default",
+          sound: true,
           color: "#1877F2",
           priority: Notifications.AndroidNotificationPriority.HIGH,
           data: {

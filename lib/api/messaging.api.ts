@@ -256,16 +256,21 @@ export async function initRealtimeAuth(): Promise<void> {
 }
 
 /**
- * Subscribe to new messages in a conversation using Supabase Realtime Broadcast.
- *
- * Requires initRealtimeAuth() to have been called once at app startup
- * before any chat screen is opened — so the JWT is already set when
- * the private channel handshake occurs synchronously here.
+ * Subscribe to new messages in a conversation.
+ * Broadcast is the low-latency path; postgres_changes is kept as a fallback
+ * so receivers still update when private broadcast auth or the DB trigger lags.
  */
 export function subscribeToMessages(
   conversationId: string,
   callback: (message: Message) => void,
+  onSubscribed?: () => void,
 ): () => void {
+  void initRealtimeAuth();
+
+  const handleRecord = (record: unknown) => {
+    if (record) callback(record as Message);
+  };
+
   const channel = supabase
     .channel(`messages:${conversationId}`, {
       config: {
@@ -274,11 +279,23 @@ export function subscribeToMessages(
       },
     })
     .on("broadcast", { event: "*" }, (payload) => {
-      const record = payload?.payload?.record;
-      if (record) callback(record as Message);
+      handleRecord(payload?.payload?.record);
     })
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "messages",
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        handleRecord(payload.new);
+      },
+    )
     .subscribe((status, err) => {
       if (err) console.error("[subscribeToMessages] subscribe error:", err);
+      if (status === "SUBSCRIBED") onSubscribed?.();
       // If the token expired mid-session, refresh and let the channel reconnect.
       if (status === "CHANNEL_ERROR") {
         supabase.auth.getSession().then(({ data: { session } }) => {

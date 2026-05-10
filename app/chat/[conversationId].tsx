@@ -163,39 +163,44 @@ export default function ChatScreen() {
     loadMessages();
     markAsRead();
 
-    const unsubscribe = subscribeToMessages(conversationId, (newMessage) => {
-      setMessages((prev) => {
-        const existsByServerId = prev.some((m) => m.id === newMessage.id);
-        if (existsByServerId) return prev;
+    const unsubscribe = subscribeToMessages(
+      conversationId,
+      (newMessage) => {
+        setMessages((prev) => {
+          const existsByServerId = prev.some((m) => m.id === newMessage.id);
+          if (existsByServerId) return prev;
 
-        const localIdx = prev.findIndex(
-          (m) =>
-            m._status === "sending" &&
-            m.sender_id === newMessage.sender_id &&
-            ((!isImageMessage(m.content) && m.content === newMessage.content) ||
-              (isImageMessage(m.content) &&
-                Math.abs(
-                  new Date(m.created_at).getTime() -
-                    new Date(newMessage.created_at).getTime(),
-                ) < 5000)),
-        );
+          const localIdx = prev.findIndex(
+            (m) =>
+              m._status === "sending" &&
+              m.sender_id === newMessage.sender_id &&
+              ((!isImageMessage(m.content) &&
+                m.content === newMessage.content) ||
+                (isImageMessage(m.content) &&
+                  Math.abs(
+                    new Date(m.created_at).getTime() -
+                      new Date(newMessage.created_at).getTime(),
+                  ) < 5000)),
+          );
 
-        let next: LocalMessage[];
-        if (localIdx !== -1) {
-          next = [...prev];
-          next[localIdx] = { ...newMessage, _status: "sent" };
-        } else {
-          next = [...prev, { ...newMessage, _status: "sent" }];
-        }
+          let next: LocalMessage[];
+          if (localIdx !== -1) {
+            next = [...prev];
+            next[localIdx] = { ...newMessage, _status: "sent" };
+          } else {
+            next = [...prev, { ...newMessage, _status: "sent" }];
+          }
 
-        // Keep cache in sync with realtime updates too.
-        messagesCacheMap.set(cacheKey, next);
-        return next;
-      });
+          // Keep cache in sync with realtime updates too.
+          messagesCacheMap.set(cacheKey, next);
+          return next;
+        });
 
-      if (newMessage.sender_id !== currentUserId) markAsRead();
-      scrollToBottom();
-    });
+        if (newMessage.sender_id !== currentUserId) markAsRead();
+        scrollToBottom();
+      },
+      loadMessages,
+    );
 
     return unsubscribe;
   }, [
@@ -233,13 +238,27 @@ export default function ChatScreen() {
     scrollToBottom();
 
     try {
-      await sendMessage({ conversation_id: conversationId, content: text });
+      const sentMessage = await sendMessage({
+        conversation_id: conversationId,
+        content: text,
+      });
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId
+            ? { ...sentMessage, _status: "sent" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === localId ? { ...m, _status: "failed" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId ? { ...m, _status: "failed" as const } : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     }
   }, [cacheKey, conversationId, currentUserId, messageText, scrollToBottom]);
 
@@ -283,19 +302,28 @@ export default function ChatScreen() {
       };
       const publicUrl = await uploadImage(pickedImage, "chat-images");
       const content = `${IMAGE_MESSAGE_PREFIX}${publicUrl}`;
-      await sendMessage({ conversation_id: conversationId, content });
+      const sentMessage = await sendMessage({
+        conversation_id: conversationId,
+        content,
+      });
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === localId ? { ...m, content, _status: "sent" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId
+            ? { ...sentMessage, _status: "sent" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === localId ? { ...m, _status: "failed" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId ? { ...m, _status: "failed" as const } : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } finally {
       setUploadingImage(false);
     }
@@ -303,22 +331,39 @@ export default function ChatScreen() {
 
   const handleRetry = useCallback(async (msg: LocalMessage) => {
     if (!cacheKey) return;
-    setMessages((prev) =>
-      prev.map((m) =>
-        m._localId === msg._localId ? { ...m, _status: "sending" } : m,
-      ),
-    );
+    setMessages((prev) => {
+      const next = prev.map((m) =>
+        m._localId === msg._localId
+          ? { ...m, _status: "sending" as const }
+          : m,
+      );
+      messagesCacheMap.set(cacheKey, next);
+      return next;
+    });
     try {
-      await sendMessage({
+      const sentMessage = await sendMessage({
         conversation_id: conversationId,
         content: msg.content,
       });
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === msg._localId
+            ? { ...sentMessage, _status: "sent" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === msg._localId ? { ...m, _status: "failed" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === msg._localId
+            ? { ...m, _status: "failed" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     }
   }, [cacheKey, conversationId]);
 
