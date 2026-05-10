@@ -151,8 +151,8 @@ const GridCard = ({ service }: { service: ServiceWithDetails }) => {
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "700",
+            fontSize: 14,
+            fontWeight: "800",
             color: "#0f172a",
             marginBottom: 6,
           }}
@@ -168,7 +168,9 @@ const GridCard = ({ service }: { service: ServiceWithDetails }) => {
           }}
         >
           <View>
-            <Text style={{ fontSize: 14, fontWeight: "800", color: "#0f172a" }}>
+            <Text
+              style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+            >
               {formatPrice(service.price)}
             </Text>
             <Text

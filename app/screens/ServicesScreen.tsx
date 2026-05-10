@@ -45,6 +45,18 @@ function formatAuthor(service: ServiceWithDetails): string {
   return "Unknown";
 }
 
+function hasRating(service: ServiceWithDetails): boolean {
+  return service.review_count > 0 && service.rating > 0;
+}
+
+function compareTopRatedServices(
+  a: ServiceWithDetails,
+  b: ServiceWithDetails,
+): number {
+  if (b.rating !== a.rating) return b.rating - a.rating;
+  return b.review_count - a.review_count;
+}
+
 // ── Featured Card ─────────────────────────────────────────────────────────────
 
 // Shared content block used inside both the image and fallback card variants
@@ -85,10 +97,10 @@ const FeaturedCardContent = ({
     {/* Title */}
     <Text
       style={{
-        fontSize: 20,
-        fontWeight: "800",
+        fontSize: 24,
+        fontWeight: "900",
         color: "#fff",
-        lineHeight: 24,
+        lineHeight: 28,
         textShadowColor: "rgba(0,0,0,0.6)",
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 4,
@@ -124,8 +136,8 @@ const FeaturedCardContent = ({
     >
       <Text
         style={{
-          fontSize: 22,
-          fontWeight: "800",
+          fontSize: 18,
+          fontWeight: "700",
           color: "#fff",
           textShadowColor: "rgba(0,0,0,0.5)",
           textShadowOffset: { width: 0, height: 1 },
@@ -338,16 +350,16 @@ const MiniCard = ({ service }: { service: ServiceWithDetails }) => {
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "700",
+            fontSize: 14,
+            fontWeight: "800",
             color: "#0f172a",
-            marginBottom: 4,
+            marginBottom: 5,
           }}
           numberOfLines={1}
         >
           {service.title}
         </Text>
-        <Text style={{ fontSize: 13, fontWeight: "800", color: "#0f172a" }}>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}>
           {formatPrice(service.price)}
         </Text>
         <Text
@@ -519,8 +531,8 @@ const GridCard = ({ service }: { service: ServiceWithDetails }) => {
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "700",
+            fontSize: 14,
+            fontWeight: "800",
             color: "#0f172a",
             marginBottom: 6,
           }}
@@ -536,7 +548,9 @@ const GridCard = ({ service }: { service: ServiceWithDetails }) => {
           }}
         >
           <View>
-            <Text style={{ fontSize: 14, fontWeight: "800", color: "#0f172a" }}>
+            <Text
+              style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+            >
               {formatPrice(service.price)}
             </Text>
             <Text
@@ -809,11 +823,11 @@ export default function ServicesScreen({
           .slice(0, 5)
       : [];
 
-  // "Top rated" — top 6 by rating, excluding any boosted service already shown
+  // "Top rated" — top 6 reviewed services by rating, then review count.
   const topRatedServices = !isFiltered
     ? [...services]
-        .sort((a, b) => b.rating - a.rating)
-        .filter((s) => s.id !== featuredService?.id)
+        .filter(hasRating)
+        .sort(compareTopRatedServices)
         .slice(0, 6)
     : [];
 

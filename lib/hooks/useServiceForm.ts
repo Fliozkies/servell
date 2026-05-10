@@ -70,6 +70,22 @@ export function useServiceForm(
       .finally(() => setLoadingCategories(false));
   }, []);
 
+  useEffect(() => {
+    if (!initialService) return;
+
+    setTitle(initialService.title ?? "");
+    setDescription(initialService.description ?? "");
+    setPrice(initialService.price != null ? String(initialService.price) : "");
+    setLocation(initialService.location ?? "");
+    setLatitude(initialService.latitude ?? null);
+    setLongitude(initialService.longitude ?? null);
+    setPhoneNumber(initialService.phone_number ?? "");
+    setTags(initialService.tags ?? []);
+    setCurrentTag("");
+    setSelectedImage(null);
+    setSelectedCategory(initialService.category_id ?? null);
+  }, [initialService]);
+
   const setCoordinates = (lat: number | null, lng: number | null) => {
     setLatitude(lat);
     setLongitude(lng);

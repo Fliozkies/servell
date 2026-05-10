@@ -58,6 +58,18 @@ function formatAuthor(service: ServiceWithDetails): string {
   return "Unknown";
 }
 
+function hasRating(service: ServiceWithDetails): boolean {
+  return service.review_count > 0 && service.rating > 0;
+}
+
+function compareTopRatedServices(
+  a: ServiceWithDetails,
+  b: ServiceWithDetails,
+): number {
+  if (b.rating !== a.rating) return b.rating - a.rating;
+  return b.review_count - a.review_count;
+}
+
 const ServiceCard = ({
   service,
   showDistance,
@@ -177,8 +189,8 @@ const ServiceCard = ({
         </Text>
         <Text
           style={{
-            fontSize: 12,
-            fontWeight: "700",
+            fontSize: 14,
+            fontWeight: "800",
             color: "#0f172a",
             marginBottom: 6,
           }}
@@ -186,7 +198,7 @@ const ServiceCard = ({
         >
           {service.title}
         </Text>
-        <Text style={{ fontSize: 14, fontWeight: "800", color: "#0f172a" }}>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}>
           {formatPrice(service.price)}
         </Text>
         <Text
@@ -281,7 +293,11 @@ function ServiceListScreenInner() {
         sortBy: sort,
         userLocation,
       });
-      setServices(data);
+      setServices(
+        sort === "rating_high"
+          ? data.filter(hasRating).sort(compareTopRatedServices)
+          : data,
+      );
     } catch {
       setError("Failed to load services. Pull down to retry.");
     } finally {
