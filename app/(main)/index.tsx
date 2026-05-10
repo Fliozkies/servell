@@ -53,7 +53,8 @@ export default function MainScreen() {
   const [notificationsRefreshKey, setNotificationsRefreshKey] = useState(0);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
-  const { counts, resetNotifications, refreshMessages } = useUnreadCounts();
+  const { counts, resetNotifications, syncNotifications, refreshMessages } =
+    useUnreadCounts();
 
   // ── Load profile location once on mount ─────────────────────────────────
   useEffect(() => {
@@ -191,6 +192,7 @@ export default function MainScreen() {
           <NotificationScreen
             key={notificationsRefreshKey}
             onAllRead={resetNotifications}
+            onUnreadCountChange={syncNotifications}
             onBack={() => setActiveTab(previousTab)}
           />
         </View>

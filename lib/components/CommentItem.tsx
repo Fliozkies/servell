@@ -1,6 +1,6 @@
 // lib/components/CommentItem.tsx
 import { AntDesign } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { deleteComment, toggleCommentLike } from "../api/comments.api";
 import { CommentWithDetails } from "../types/database.types";
@@ -50,8 +50,28 @@ export default function CommentItem({
 
   // Optimistic state for replies
   const [localReplies, setLocalReplies] = useState(comment.replies ?? []);
+  const previousReplyCountRef = useRef(comment.replies?.length ?? 0);
 
   const [viewReply, setViewReply] = useState(false);
+
+  useEffect(() => {
+    setLocalLikeCount(comment.like_count);
+    setLocalIsLiked(comment.user_has_liked);
+  }, [comment.like_count, comment.user_has_liked]);
+
+  useEffect(() => {
+    const nextReplies = comment.replies ?? [];
+    const previousReplyCount = previousReplyCountRef.current;
+
+    setLocalReplies(nextReplies);
+
+    if (nextReplies.length > previousReplyCount) {
+      setShowReplies(true);
+      setViewReply(true);
+    }
+
+    previousReplyCountRef.current = nextReplies.length;
+  }, [comment.replies]);
 
   const authorName = comment.profile?.first_name
     ? `${comment.profile.first_name} ${comment.profile.last_name || ""}`.trim()
@@ -116,62 +136,60 @@ export default function CommentItem({
   return (
     <View style={[styles.container, highlight && styles.containerHighlight]}>
       {/* ── Comment header ── */}
-      <TouchableOpacity onPress={() => onReply(comment)}>
-        <View className="flex-row items-start">
-          <View className="mr-2">
-            <ProfileAvatar profile={comment.profile} size={40} />
-          </View>
-
-          <View className="flex-1">
-            {/* Name + badge row */}
-            <View className="flex-row items-center flex-wrap">
-              <Text className="text-sm font-bold text-slate-900 mr-[1px]">
-                {authorName}
-              </Text>
-              {comment.is_provider && (
-                <View className="bg-[#1877F2]/10 px-1 py-0.5 rounded-full">
-                  <Text className="text-sm font-bold text-[#1877F2]">
-                    Service Provider
-                  </Text>
-                </View>
-              )}
-            </View>
-            <Text className="text-[11px] text-slate-400 mt-0.5">
-              {formatDistanceToNow(comment.created_at)}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            onPress={handleLike}
-            disabled={liking}
-            className="flex-row items-center"
-          >
-            <AntDesign
-              name={localIsLiked ? "like" : "like"}
-              size={13}
-              color={localIsLiked ? "#1877F2" : "#94a3b8"}
-            />
-            <Text
-              className={`ml-1 text-xs font-semibold ${
-                localIsLiked ? "text-[#1877F2]" : "text-slate-400"
-              }`}
-            >
-              {localLikeCount}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Delete (own comments) */}
-          {isAuthor && (
-            <TouchableOpacity
-              onPress={handleDelete}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              className="ml-4"
-            >
-              <AntDesign name="delete" size={14} color="#cbd5e1" />
-            </TouchableOpacity>
-          )}
+      <View className="flex-row items-start">
+        <View className="mr-2">
+          <ProfileAvatar profile={comment.profile} size={40} />
         </View>
-      </TouchableOpacity>
+
+        <View className="flex-1">
+          {/* Name + badge row */}
+          <View className="flex-row items-center flex-wrap">
+            <Text className="text-sm font-bold text-slate-900 mr-[1px]">
+              {authorName}
+            </Text>
+            {comment.is_provider && (
+              <View className="bg-[#1877F2]/10 px-1 py-0.5 rounded-full">
+                <Text className="text-sm font-bold text-[#1877F2]">
+                  Service Provider
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text className="text-[11px] text-slate-400 mt-0.5">
+            {formatDistanceToNow(comment.created_at)}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleLike}
+          disabled={liking}
+          className="flex-row items-center"
+        >
+          <AntDesign
+            name={localIsLiked ? "like" : "like"}
+            size={13}
+            color={localIsLiked ? "#1877F2" : "#94a3b8"}
+          />
+          <Text
+            className={`ml-1 text-xs font-semibold ${
+              localIsLiked ? "text-[#1877F2]" : "text-slate-400"
+            }`}
+          >
+            {localLikeCount}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Delete (own comments) */}
+        {isAuthor && (
+          <TouchableOpacity
+            onPress={handleDelete}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            className="ml-4"
+          >
+            <AntDesign name="delete" size={14} color="#cbd5e1" />
+          </TouchableOpacity>
+        )}
+      </View>
 
       <View className="flex-row mb-2">
         {/* for offsetting */}
@@ -182,25 +200,26 @@ export default function CommentItem({
       </View>
 
       {/* ── Action row ── */}
-      <View className="flex-row">
-        {/* View replies */}
-
+      <View className="flex-row items-center">
+        <View className="w-10 mr-3" />
+        <TouchableOpacity
+          onPress={() => onReply(comment)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text className="text-sm font-semibold text-[#1877F2]">Reply</Text>
+        </TouchableOpacity>
         {hasReplies && (
-          <>
-            <View className="w-10 mr-3" />
-
-            <TouchableOpacity
-              onPress={() => {
-                setShowReplies(!showReplies);
-                setViewReply(!viewReply);
-              }}
-              className="flex-row items-center"
-            >
-              <Text className="ml-1 text-sm font-semibold text-[#1877F2]">
-                {viewReply ? "Hide replies" : "View replies"}
-              </Text>
-            </TouchableOpacity>
-          </>
+          <TouchableOpacity
+            onPress={() => {
+              setShowReplies(!showReplies);
+              setViewReply(!viewReply);
+            }}
+            className="flex-row items-center ml-4"
+          >
+            <Text className="text-sm font-semibold text-[#1877F2]">
+              {viewReply ? "Hide replies" : "View replies"}
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
 
@@ -264,81 +283,73 @@ export default function CommentItem({
 
               return (
                 <View key={reply.id} className="mb-3">
-                  <TouchableOpacity
-                    onPress={() => onReply(reply)}
-                    activeOpacity={0.7}
-                  >
-                    <View className="flex-row items-start">
-                      <ProfileAvatar profile={reply.profile} size={32} />
+                  <View className="flex-row items-start">
+                    <ProfileAvatar profile={reply.profile} size={32} />
 
-                      <View className="ml-2 flex-1">
-                        <View className="flex-row items-center flex-wrap">
-                          <Text className="text-sm font-bold text-slate-900">
-                            {replyAuthorName}
-                          </Text>
-                          {reply.is_provider && (
-                            <View className="bg-[#1877F2]/10 px-1 py-1 rounded-full">
-                              <Text className="text-sm font-bold text-[#1877F2]">
-                                Service Provider
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text className="text-[11px] text-slate-400">
-                          {formatDistanceToNow(reply.created_at)}
+                    <View className="ml-2 flex-1">
+                      <View className="flex-row items-center flex-wrap">
+                        <Text className="text-sm font-bold text-slate-900">
+                          {replyAuthorName}
                         </Text>
+                        {reply.is_provider && (
+                          <View className="bg-[#1877F2]/10 px-1 py-1 rounded-full">
+                            <Text className="text-sm font-bold text-[#1877F2]">
+                              Service Provider
+                            </Text>
+                          </View>
+                        )}
                       </View>
-
-                      <TouchableOpacity
-                        onPress={handleReplyLike}
-                        className="flex-row items-center mt-1.5 ml-9"
-                      >
-                        <AntDesign
-                          name={reply.user_has_liked ? "like" : "like"}
-                          size={11}
-                          color={reply.user_has_liked ? "#1877F2" : "#94a3b8"}
-                        />
-                        <Text
-                          className={`ml-1 text-[10px] font-semibold ${
-                            reply.user_has_liked
-                              ? "text-[#1877F2]"
-                              : "text-slate-400"
-                          }`}
-                        >
-                          {reply.like_count}
-                        </Text>
-                      </TouchableOpacity>
-
-                      {currentUserId === reply.user_id && (
-                        <TouchableOpacity
-                          onPress={() => {
-                            Alert.alert("Delete Reply", "Are you sure?", [
-                              { text: "Cancel", style: "cancel" },
-                              {
-                                text: "Delete",
-                                style: "destructive",
-                                onPress: async () => {
-                                  try {
-                                    await deleteComment(reply.id);
-                                    onUpdate();
-                                  } catch (error) {
-                                    console.error(
-                                      "Error deleting reply:",
-                                      error,
-                                    );
-                                  }
-                                },
-                              },
-                            ]);
-                          }}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          className="ml-4"
-                        >
-                          <AntDesign name="delete" size={12} color="#cbd5e1" />
-                        </TouchableOpacity>
-                      )}
+                      <Text className="text-[11px] text-slate-400">
+                        {formatDistanceToNow(reply.created_at)}
+                      </Text>
                     </View>
-                  </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={handleReplyLike}
+                      className="flex-row items-center mt-1.5 ml-9"
+                    >
+                      <AntDesign
+                        name={reply.user_has_liked ? "like" : "like"}
+                        size={11}
+                        color={reply.user_has_liked ? "#1877F2" : "#94a3b8"}
+                      />
+                      <Text
+                        className={`ml-1 text-[10px] font-semibold ${
+                          reply.user_has_liked
+                            ? "text-[#1877F2]"
+                            : "text-slate-400"
+                        }`}
+                      >
+                        {reply.like_count}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {currentUserId === reply.user_id && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          Alert.alert("Delete Reply", "Are you sure?", [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Delete",
+                              style: "destructive",
+                              onPress: async () => {
+                                try {
+                                  await deleteComment(reply.id);
+                                  onUpdate();
+                                } catch (error) {
+                                  console.error("Error deleting reply:", error);
+                                }
+                              },
+                            },
+                          ]);
+                        }}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        className="ml-4"
+                      >
+                        <AntDesign name="delete" size={12} color="#cbd5e1" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
 
                   {/* Reply content */}
                   <Text className="text-sm text-slate-700 leading-5 mt-2">
@@ -349,7 +360,15 @@ export default function CommentItem({
                     {reply.content}
                   </Text>
 
-                  {/* Reply like action */}
+                  <TouchableOpacity
+                    onPress={() => onReply(reply)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    className="mt-1 self-start"
+                  >
+                    <Text className="text-sm font-semibold text-[#1877F2]">
+                      Reply
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               );
             })}

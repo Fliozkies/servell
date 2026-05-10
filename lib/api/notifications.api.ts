@@ -2,6 +2,20 @@
 import { CreateNotificationInput, Notification } from "../types/database.types";
 import { supabase } from "./supabase";
 
+async function insertNotification(
+  input: CreateNotificationInput,
+): Promise<void> {
+  const { error } = await supabase.rpc("send_notification", {
+    p_user_id: input.user_id,
+    p_type: input.type,
+    p_title: input.title,
+    p_body: input.body,
+    p_data: input.data || null,
+  });
+
+  if (error) throw error;
+}
+
 /**
  * Fetch all notifications for the current user, newest first.
  */
@@ -118,19 +132,22 @@ export async function deleteNotification(
 export async function sendNotification(
   input: CreateNotificationInput,
 ): Promise<void> {
-  try {
-    const { error } = await supabase.from("notifications").insert({
-      user_id: input.user_id,
-      type: input.type,
-      title: input.title,
-      body: input.body,
-      data: input.data || null,
-    });
+  await insertNotification(input);
+}
 
-    if (error) throw error;
+/**
+ * Try to send a notification without failing the primary user action.
+ * Useful for side effects like comments, likes, and replies.
+ */
+export async function sendNotificationSafely(
+  input: CreateNotificationInput,
+): Promise<boolean> {
+  try {
+    await insertNotification(input);
+    return true;
   } catch (error) {
-    console.error("Error sending notification:", error);
-    throw error;
+    console.warn("Notification was not created:", error);
+    return false;
   }
 }
 
