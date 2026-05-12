@@ -1109,3 +1109,66 @@ boosted_until = NOW() + (days || ' days')::INTERVAL
 WHERE id = service_id;
 END;
 $$;
+
+8.
+-- ============================================================
+-- Fix: update_service_rating trigger bypassed by RLS
+-- The trigger runs as the calling user (the reviewer), who is
+-- blocked from updating services they don't own.
+-- Making it SECURITY DEFINER lets it run as the DB owner,
+-- bypassing RLS — which is correct for an internal aggregation.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.update_service_rating()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_service_id UUID;
+BEGIN
+  v_service_id := COALESCE(NEW.service_id, OLD.service_id);
+
+  UPDATE public.services
+  SET
+    rating       = COALESCE((
+                     SELECT AVG(rating)
+                     FROM public.reviews
+                     WHERE service_id = v_service_id
+                   ), 0),
+    review_count = (
+                     SELECT COUNT(*)
+                     FROM public.reviews
+                     WHERE service_id = v_service_id
+                   )
+  WHERE id = v_service_id;
+
+  RETURN NULL;
+END;
+$$;
+
+9.
+alter table public.notifications
+drop constraint if exists notifications_type_check;
+
+alter table public.notifications
+add constraint notifications_type_check
+check (
+  type in (
+    'new_message',
+    'new_review',
+    'review_reply',
+    'review_reaction',
+    'new_subscriber',
+    'service_discount',
+    'new_service_from_subscription',
+    'price_drop',
+    'broadcast',
+    'account_verified',
+    'new_comment',
+    'comment_reply',
+    'comment_like'
+  )
+);
+

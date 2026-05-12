@@ -310,7 +310,7 @@ export function BoostServiceModal({
     (force = false) => {
       if (!userId || (cachedServices !== null && !force)) return;
       setServicesLoading(true);
-      fetchUserServices(userId)
+      fetchUserServices(userId, { force })
         .then((data) =>
           setCachedServices(data.filter((s) => s.status !== "deleted")),
         )
@@ -378,6 +378,7 @@ export function BoostServiceModal({
         boost_tier: selectedTier,
         boosted_until: boostedUntil.toISOString(),
       };
+      setSelectedService(updated);
       onBoosted?.(updated);
       // Keep cache in sync after a successful boost
       setCachedServices((prev) =>
@@ -414,7 +415,13 @@ export function BoostServiceModal({
                 boost_tier: null,
                 boosted_until: null,
               };
+              setSelectedService(updated);
               onBoosted?.(updated);
+              setCachedServices((prev) =>
+                prev
+                  ? prev.map((s) => (s.id === updated.id ? updated : s))
+                  : prev,
+              );
               Alert.alert("Boost Cancelled", "Your boost has been removed.", [
                 { text: "OK", onPress: onClose },
               ]);

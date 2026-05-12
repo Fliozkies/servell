@@ -749,6 +749,11 @@ export default function ProfileScreen() {
           setServices((prev) =>
             prev.map((s) => (s.id === updated.id ? updated : s)),
           );
+          setServiceToEdit((prev) =>
+            prev && prev.id === updated.id
+              ? { ...prev, ...updated }
+              : prev,
+          );
         }}
       />
     </View>

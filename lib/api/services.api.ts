@@ -152,32 +152,36 @@ export async function fetchServicesByCategory(
   categoryId: string,
   options: FetchOptions = {},
 ): Promise<ServiceWithDetails[]> {
-  return withServicesCache(`services:category:${categoryId}`, options, async () => {
-    try {
-      const { data, error } = await supabase
-        .from("services")
-        .select(
-          `
+  return withServicesCache(
+    `services:category:${categoryId}`,
+    options,
+    async () => {
+      try {
+        const { data, error } = await supabase
+          .from("services")
+          .select(
+            `
           *,
           category:categories(*),
           profile:profiles(*)
         `,
-        )
-        .eq("status", "active")
-        .eq("category_id", categoryId)
-        .order("created_at", { ascending: false });
+          )
+          .eq("status", "active")
+          .eq("category_id", categoryId)
+          .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching services by category:", error);
+        if (error) {
+          console.error("Error fetching services by category:", error);
+          throw error;
+        }
+
+        return data || [];
+      } catch (error) {
+        console.error("Failed to fetch services by category:", error);
         throw error;
       }
-
-      return data || [];
-    } catch (error) {
-      console.error("Failed to fetch services by category:", error);
-      throw error;
-    }
-  });
+    },
+  );
 }
 
 /**
@@ -690,7 +694,7 @@ export async function boostService(
  */
 export async function cancelServiceBoost(serviceId: string): Promise<void> {
   const { error } = await supabase.rpc("cancel_service_boost", {
-    service_id: serviceId,
+    p_service_id: serviceId,
   });
   if (error) {
     console.error("Error cancelling boost:", error);
