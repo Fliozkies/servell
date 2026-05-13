@@ -173,7 +173,6 @@ async function ensureNotificationPermissions(): Promise<boolean> {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#1877F2",
       showBadge: true,
-      sound: "default",
     });
   }
 
@@ -409,7 +408,7 @@ export function PushNotificationProvider({
         content: {
           title: notification.title,
           body: notification.body,
-          sound: "default",
+          sound: true,
           color: "#1877F2",
           priority: Notifications.AndroidNotificationPriority.HIGH,
           data: {

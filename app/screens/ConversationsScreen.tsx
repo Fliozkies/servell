@@ -177,9 +177,6 @@ export default function ConversationsScreen() {
       <View style={styles.root}>
         <View className="flex-row items-center justify-between bg-white px-5 pb-2 border-b border-slate-100">
           <Text className="text-3xl font-bold text-slate-900">Messages</Text>
-          <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
-            <Ionicons name="refresh" size={20} color={COLORS.slate500} />
-          </TouchableOpacity>
         </View>
 
         {conversations.length === 0 ? (
@@ -222,14 +219,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.slate50 },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
   loaderText: { marginTop: 12, color: COLORS.slate500, fontSize: 14 },
-  refreshBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.slate100,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   separator: { height: 1, backgroundColor: COLORS.slate100, marginLeft: 76 },
   row: {
     flexDirection: "row",
