@@ -1,5 +1,4 @@
 // app/screens/ProfileScreen.tsx
-// Previously: app/juarez_app/pages/Profile_page.tsx
 import { AntDesign } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
@@ -19,7 +18,9 @@ import {
   Shield,
   Star,
   Trash2,
+  UserCheck,
   UserMinus,
+  UserPlus,
   Users,
   X,
   Zap,
@@ -44,7 +45,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import {
   fetchUserServices,
   updateServiceStatus,
@@ -52,6 +56,8 @@ import {
 import {
   getSubscriberCount,
   getSubscriptions,
+  isSubscribedToProvider,
+  subscribeToProvider,
   unsubscribeFromProvider,
 } from "../../lib/api/subscriptions.api";
 import { supabase } from "../../lib/api/supabase";
@@ -90,11 +96,14 @@ import {
 
 type ProfileTab = "posts" | "subscriptions" | "reviews";
 
-const PROFILE_TABS = [
+const OWN_PROFILE_TABS = [
   { key: "posts" as const, label: "Services" },
   { key: "subscriptions" as const, label: "Subscriptions" },
   { key: "reviews" as const, label: "My Reviews" },
 ];
+
+// Public profile only shows the provider's services
+const PUBLIC_PROFILE_TABS = [{ key: "posts" as const, label: "Services" }];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -103,9 +112,20 @@ async function handleLogout() {
   router.replace("/(auth)/auth");
 }
 
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+type ProfileScreenProps = {
+  /**
+   * When provided, renders a public/viewer profile for that userId.
+   * When omitted, renders the logged-in user's own profile (original behaviour).
+   */
+  viewedUserId?: string;
+};
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ viewedUserId }: ProfileScreenProps) {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -130,11 +150,21 @@ export default function ProfileScreen() {
   const [isProfileImageModalVisible, setIsProfileImageModalVisible] =
     useState(false);
 
+  // ── Subscribe state (public profile only) ─────────────────────────────────
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+
   const actionSheetSlide = useRef(new Animated.Value(0)).current;
   const actionSheetBackdrop = useRef(new Animated.Value(0)).current;
 
   const { createScrollHandler } = useScrollDirection();
   const scrollHandler = useRef(createScrollHandler()).current;
+
+  // The ID of the profile being displayed (own or someone else's)
+  const targetUserId = viewedUserId ?? currentUserId;
+  // True when viewing your own profile
+  const isOwnProfile = !viewedUserId || viewedUserId === currentUserId;
+
   // ── Data loaders ───────────────────────────────────────────────────────────
 
   const loadProfile = useCallback(async () => {
@@ -143,28 +173,44 @@ export default function ProfileScreen() {
     } = await supabase.auth.getUser();
     if (!user) return;
     setCurrentUserId(user.id);
+
+    // Determine which profile to load
+    const profileId = viewedUserId ?? user.id;
+
     const { data } = await supabase
       .from("profiles")
       .select("*")
-      .eq("id", user.id)
+      .eq("id", profileId)
       .single();
     if (data) setProfile(data);
-    setSubscriberCount(await getSubscriberCount(user.id));
+
+    setSubscriberCount(await getSubscriberCount(profileId));
+
+    // For public profiles, also fetch subscription status
+    if (viewedUserId && viewedUserId !== user.id) {
+      setIsSubscribed(await isSubscribedToProvider(viewedUserId));
+    }
+
     setProfileLoading(false);
-  }, []);
+  }, [viewedUserId]);
 
   const loadServices = useCallback(async () => {
-    if (!currentUserId) return;
+    if (!targetUserId) return;
     setLoadingServices(true);
     try {
-      const data = await fetchUserServices(currentUserId);
-      setServices(data.filter((s) => s.status !== "deleted"));
+      const data = await fetchUserServices(targetUserId);
+      // Own profile hides deleted; public profile only shows active
+      setServices(
+        isOwnProfile
+          ? data.filter((s) => s.status !== "deleted")
+          : data.filter((s) => s.status === "active"),
+      );
     } catch (e) {
       console.error(e);
     } finally {
       setLoadingServices(false);
     }
-  }, [currentUserId]);
+  }, [targetUserId, isOwnProfile]);
 
   const loadSubscriptions = useCallback(async () => {
     setLoadingSubscriptions(true);
@@ -198,22 +244,20 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
   const handleTabPress = useCallback(
     (tab: ProfileTab) => {
       if (tab === activeTab) return;
-
       if (tab === "posts") setLoadingServices(true);
       else if (tab === "subscriptions") setLoadingSubscriptions(true);
       else setLoadingReviews(true);
-
       setActiveTab(tab);
     },
     [activeTab],
   );
 
   useEffect(() => {
-    if (!currentUserId) return;
-
+    if (!targetUserId) return;
     if (activeTab === "posts") {
       loadServices();
     } else if (activeTab === "subscriptions") {
@@ -221,35 +265,55 @@ export default function ProfileScreen() {
     } else if (activeTab === "reviews") {
       loadReviews();
     }
-  }, [activeTab, currentUserId, loadReviews, loadServices, loadSubscriptions]);
+  }, [activeTab, targetUserId, loadReviews, loadServices, loadSubscriptions]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProfile();
     if (activeTab === "posts") await loadServices();
-    else if (activeTab === "subscriptions") {
-      await loadSubscriptions();
-    } else if (activeTab === "reviews") {
-      await loadReviews();
-    }
+    else if (activeTab === "subscriptions") await loadSubscriptions();
+    else if (activeTab === "reviews") await loadReviews();
     setRefreshing(false);
   }, [activeTab, loadProfile, loadServices, loadSubscriptions, loadReviews]);
 
-  // ── Profile image update ───────────────────────────────────────────────────
+  // ── Subscribe / Unsubscribe ────────────────────────────────────────────────
+
+  const handleSubscribeToggle = useCallback(async () => {
+    if (!viewedUserId || subscribing) return;
+
+    // Optimistic update
+    const wasSubscribed = isSubscribed;
+    setIsSubscribed(!wasSubscribed);
+    setSubscriberCount((c) => (wasSubscribed ? Math.max(0, c - 1) : c + 1));
+    setSubscribing(true);
+
+    try {
+      if (wasSubscribed) {
+        await unsubscribeFromProvider(viewedUserId);
+      } else {
+        await subscribeToProvider(viewedUserId);
+      }
+    } catch {
+      // Rollback on failure
+      setIsSubscribed(wasSubscribed);
+      setSubscriberCount((c) => (wasSubscribed ? c + 1 : Math.max(0, c - 1)));
+      Alert.alert("Error", "Could not update subscription. Please try again.");
+    } finally {
+      setSubscribing(false);
+    }
+  }, [viewedUserId, isSubscribed, subscribing]);
+
+  // ── Profile image update (own profile only) ────────────────────────────────
 
   const handleUpdateProfileImage = useCallback(
     async (imageUrl: string) => {
       if (!currentUserId) return;
-
       try {
         const { error } = await supabase
           .from("profiles")
           .update({ profile_image_url: imageUrl })
           .eq("id", currentUserId);
-
         if (error) throw error;
-
-        // Update local state
         setProfile((prev) =>
           prev ? { ...prev, profile_image_url: imageUrl } : null,
         );
@@ -304,7 +368,7 @@ export default function ProfileScreen() {
     [actionSheetSlide, actionSheetBackdrop],
   );
 
-  // ── Service actions ────────────────────────────────────────────────────────
+  // ── Service actions (own profile only) ────────────────────────────────────
 
   const handleToggleStatus = useCallback((service: Service) => {
     const newStatus = service.status === "active" ? "inactive" : "active";
@@ -403,21 +467,37 @@ export default function ProfileScreen() {
         ).toFixed(1)
       : "—";
 
-  // text-xl font-bold text-slate-900
+  const profileTabs = isOwnProfile ? OWN_PROFILE_TABS : PUBLIC_PROFILE_TABS;
+  const isStandaloneProfile = Boolean(viewedUserId);
+
   if (profileLoading) {
     return <ProfileScreenSkeleton />;
   }
 
   return (
     <View className="flex-1 bg-white">
-      <View className="flex-row justify-between items-center px-5 pb-2 border-b border-slate-100">
-        <Text className="text-3xl font-bold text-slate-900">Profile</Text>
-        <TouchableOpacity
-          onPress={() => setIsSettingsVisible(true)}
-          className="p-2 bg-slate-50 rounded-full"
-        >
-          <Settings size={20} color={COLORS.slate500} />
-        </TouchableOpacity>
+      {/* ── Header bar ── */}
+      <View
+        className="flex-row justify-between items-center px-5 pb-2 border-b border-slate-100"
+        style={{ paddingTop: isStandaloneProfile ? insets.top + 8 : 0 }}
+      >
+        {/* Back arrow on public profiles; logo space on own */}
+        {!isOwnProfile ? (
+          <TouchableOpacity onPress={() => router.back()} className="p-1">
+            <AntDesign name="arrow-left" size={22} color={COLORS.slate900} />
+          </TouchableOpacity>
+        ) : (
+          <Text className="text-3xl font-bold text-slate-900">Profile</Text>
+        )}
+
+        {isOwnProfile && (
+          <TouchableOpacity
+            onPress={() => setIsSettingsVisible(true)}
+            className="p-2 bg-slate-50 rounded-full"
+          >
+            <Settings size={20} color={COLORS.slate500} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView
@@ -433,19 +513,27 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* Profile header */}
+        {/* ── Profile header ── */}
         <View className="px-5 pt-6 pb-4">
           <View className="items-center">
-            <TouchableOpacity
-              onPress={() => setIsProfileImageModalVisible(true)}
-              activeOpacity={0.7}
-            >
+            {/* Avatar — tappable only on own profile to change photo */}
+            {isOwnProfile ? (
+              <TouchableOpacity
+                onPress={() => setIsProfileImageModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                <ProfileAvatar profile={profile} size={96} textSize={36} />
+              </TouchableOpacity>
+            ) : (
               <ProfileAvatar profile={profile} size={96} textSize={36} />
-            </TouchableOpacity>
+            )}
+
             <View className="mt-4 items-center">
               <View className="flex-row items-center justify-center">
                 <Text className="text-2xl font-bold text-slate-900 mr-2">
-                  {displayName}
+                  {isOwnProfile
+                    ? displayName
+                    : formatDisplayName(profile, "Provider")}
                 </Text>
                 {profile?.physis_verified && (
                   <BadgeCheck size={20} color={COLORS.primary} fill="#dbeafe" />
@@ -459,6 +547,7 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          {/* Stats row */}
           <View className="flex-row mt-5 bg-slate-50 rounded-2xl p-4">
             <StatPill label="Subscribers" value={subscriberCount} />
             <View className="w-[1px] bg-slate-200 mx-4" />
@@ -466,16 +555,51 @@ export default function ProfileScreen() {
             <View className="w-[1px] bg-slate-200 mx-4" />
             <StatPill label="Avg Rating" value={avgRating} />
           </View>
+
+          {/* Subscribe button — only shown on public profiles */}
+          {!isOwnProfile && (
+            <TouchableOpacity
+              onPress={handleSubscribeToggle}
+              disabled={subscribing}
+              activeOpacity={0.82}
+              className={`mt-4 py-3 rounded-2xl flex-row items-center justify-center ${
+                isSubscribed
+                  ? "bg-slate-100 border border-slate-200"
+                  : "bg-[#1877F2]"
+              }`}
+            >
+              {subscribing ? (
+                <ActivityIndicator
+                  size="small"
+                  color={isSubscribed ? COLORS.slate500 : "#fff"}
+                />
+              ) : isSubscribed ? (
+                <>
+                  <UserCheck size={16} color={COLORS.slate600} />
+                  <Text className="ml-2 font-bold text-slate-600 text-sm">
+                    Subscribed
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <UserPlus size={16} color="#fff" />
+                  <Text className="ml-2 font-bold text-white text-sm">
+                    Subscribe
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Tab Bar — uses shared TabBar component */}
+        {/* ── Tab Bar ── */}
         <TabBar
-          tabs={PROFILE_TABS}
+          tabs={profileTabs}
           activeTab={activeTab}
           onTabPress={handleTabPress}
         />
 
-        {/* Tab content */}
+        {/* ── Tab content ── */}
         <View className="px-5 pb-10 pt-4">
           {activeTab === "posts" && (
             <>
@@ -504,22 +628,38 @@ export default function ProfileScreen() {
                 <ProfileEmptyState
                   icon={<List size={32} color={COLORS.slate400} />}
                   title="No services yet"
-                  subtitle="Tap the + button to post your first service listing."
+                  subtitle={
+                    isOwnProfile
+                      ? "Tap the + button to post your first service listing."
+                      : "This provider hasn't posted any services yet."
+                  }
                 />
               ) : (
-                services.map((service) => (
-                  <ServiceCard
-                    key={service.id}
-                    service={service}
-                    onMorePress={() => openActionSheet(service)}
-                    onToggleStatus={() => handleToggleStatus(service)}
-                  />
-                ))
+                services.map((service) =>
+                  isOwnProfile ? (
+                    <ServiceCard
+                      key={service.id}
+                      service={service}
+                      onMorePress={() => openActionSheet(service)}
+                      onToggleStatus={() => handleToggleStatus(service)}
+                    />
+                  ) : (
+                    // Public view — tappable card with no management actions
+                    <TouchableOpacity
+                      key={service.id}
+                      onPress={() => router.push(`/service/${service.id}`)}
+                      activeOpacity={0.85}
+                    >
+                      <ServiceCard service={service} readonly />
+                    </TouchableOpacity>
+                  ),
+                )
               )}
             </>
           )}
 
-          {activeTab === "subscriptions" && (
+          {/* Subscriptions & Reviews tabs are own-profile-only */}
+          {activeTab === "subscriptions" && isOwnProfile && (
             <>
               {loadingSubscriptions ? (
                 <View style={{ gap: 12 }}>
@@ -544,7 +684,7 @@ export default function ProfileScreen() {
               ) : subscriptions.length === 0 ? (
                 <ProfileEmptyState
                   icon={<Users size={32} color={COLORS.slate400} />}
-                  title="Not subcribed to anyone"
+                  title="Not subscribed to anyone"
                   subtitle="Subscribe to service providers to stay updated."
                 />
               ) : (
@@ -559,7 +699,7 @@ export default function ProfileScreen() {
             </>
           )}
 
-          {activeTab === "reviews" && (
+          {activeTab === "reviews" && isOwnProfile && (
             <>
               {loadingReviews ? (
                 <View style={{ gap: 12 }}>
@@ -604,116 +744,119 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
-      {/* Action Sheet */}
-      <Modal visible={isActionSheetVisible} transparent animationType="none">
-        <Animated.View
-          style={{
-            flex: 1,
-            justifyContent: "flex-end",
-            opacity: actionSheetBackdrop,
-            backgroundColor: "rgba(0,0,0,0.4)",
-          }}
-        >
-          <TouchableOpacity
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-            }}
-            activeOpacity={1}
-            onPress={() => closeActionSheet()}
-          />
+      {/* ── Action Sheet (own profile only) ── */}
+      {isOwnProfile && (
+        <Modal visible={isActionSheetVisible} transparent animationType="none">
           <Animated.View
             style={{
-              transform: [
-                {
-                  translateY: actionSheetSlide.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [400, 0],
-                  }),
-                },
-              ],
+              flex: 1,
+              justifyContent: "flex-end",
+              opacity: actionSheetBackdrop,
+              backgroundColor: "rgba(0,0,0,0.4)",
             }}
           >
             <TouchableOpacity
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+              }}
               activeOpacity={1}
-              onPress={(e) => e.stopPropagation()}
-              className="bg-white rounded-t-[32px] p-6 pb-10"
+              onPress={() => closeActionSheet()}
+            />
+            <Animated.View
+              style={{
+                transform: [
+                  {
+                    translateY: actionSheetSlide.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [400, 0],
+                    }),
+                  },
+                ],
+              }}
             >
-              <View className="w-12 h-1 bg-slate-200 rounded-full self-center mb-6" />
-              {serviceToEdit && (
-                <Text
-                  className="text-center font-bold text-slate-900 text-base mb-4"
-                  numberOfLines={1}
-                >
-                  {serviceToEdit.title}
-                </Text>
-              )}
-              <MenuOption
-                icon={<Edit3 size={20} color={COLORS.primary} />}
-                label="Edit Service"
-                onPress={() => {
-                  closeActionSheet(() =>
-                    setTimeout(() => setIsEditServiceVisible(true), 300),
-                  );
-                }}
-              />
-              <MenuOption
-                icon={
-                  serviceToEdit?.status === "active" ? (
-                    <AlertCircle size={20} color="#f97316" />
-                  ) : (
-                    <BarChart3 size={20} color={COLORS.success} />
-                  )
-                }
-                label={
-                  serviceToEdit?.status === "active"
-                    ? "Deactivate (hide)"
-                    : "Activate (show)"
-                }
-                onPress={() => {
-                  const c = serviceToEdit;
-                  closeActionSheet(() =>
-                    setTimeout(() => {
-                      if (c) handleToggleStatus(c);
-                    }, 300),
-                  );
-                }}
-              />
-              <MenuOption
-                icon={<Zap size={20} color="#7c3aed" />}
-                label={
-                  serviceToEdit?.boosted_until &&
-                  new Date(serviceToEdit.boosted_until) > new Date()
-                    ? "Manage Boost"
-                    : "Boost Service"
-                }
-                onPress={() => {
-                  closeActionSheet(() =>
-                    setTimeout(() => setIsBoostModalVisible(true), 300),
-                  );
-                }}
-              />
-              <MenuOption
-                icon={<Trash2 size={20} color={COLORS.danger} />}
-                label="Delete Service"
-                destructive
-                onPress={handleDeleteService}
-              />
               <TouchableOpacity
-                onPress={() => closeActionSheet()}
-                className="mt-4 bg-slate-100 py-4 rounded-2xl items-center"
+                activeOpacity={1}
+                onPress={(e) => e.stopPropagation()}
+                className="bg-white rounded-t-[32px] p-6 pb-10"
               >
-                <Text className="font-bold text-slate-700">Cancel</Text>
+                <View className="w-12 h-1 bg-slate-200 rounded-full self-center mb-6" />
+                {serviceToEdit && (
+                  <Text
+                    className="text-center font-bold text-slate-900 text-base mb-4"
+                    numberOfLines={1}
+                  >
+                    {serviceToEdit.title}
+                  </Text>
+                )}
+                <MenuOption
+                  icon={<Edit3 size={20} color={COLORS.primary} />}
+                  label="Edit Service"
+                  onPress={() => {
+                    closeActionSheet(() =>
+                      setTimeout(() => setIsEditServiceVisible(true), 300),
+                    );
+                  }}
+                />
+                <MenuOption
+                  icon={
+                    serviceToEdit?.status === "active" ? (
+                      <AlertCircle size={20} color="#f97316" />
+                    ) : (
+                      <BarChart3 size={20} color={COLORS.success} />
+                    )
+                  }
+                  label={
+                    serviceToEdit?.status === "active"
+                      ? "Deactivate (hide)"
+                      : "Activate (show)"
+                  }
+                  onPress={() => {
+                    const c = serviceToEdit;
+                    closeActionSheet(() =>
+                      setTimeout(() => {
+                        if (c) handleToggleStatus(c);
+                      }, 300),
+                    );
+                  }}
+                />
+                <MenuOption
+                  icon={<Zap size={20} color="#7c3aed" />}
+                  label={
+                    serviceToEdit?.boosted_until &&
+                    new Date(serviceToEdit.boosted_until) > new Date()
+                      ? "Manage Boost"
+                      : "Boost Service"
+                  }
+                  onPress={() => {
+                    closeActionSheet(() =>
+                      setTimeout(() => setIsBoostModalVisible(true), 300),
+                    );
+                  }}
+                />
+                <MenuOption
+                  icon={<Trash2 size={20} color={COLORS.danger} />}
+                  label="Delete Service"
+                  destructive
+                  onPress={handleDeleteService}
+                />
+                <TouchableOpacity
+                  onPress={() => closeActionSheet()}
+                  className="mt-4 bg-slate-100 py-4 rounded-2xl items-center"
+                >
+                  <Text className="font-bold text-slate-700">Cancel</Text>
+                </TouchableOpacity>
               </TouchableOpacity>
-            </TouchableOpacity>
+            </Animated.View>
           </Animated.View>
-        </Animated.View>
-      </Modal>
+        </Modal>
+      )}
 
-      {serviceToEdit && (
+      {/* ── Own-profile-only modals ── */}
+      {isOwnProfile && serviceToEdit && (
         <EditServiceModal
           visible={isEditServiceVisible}
           service={serviceToEdit}
@@ -727,35 +870,39 @@ export default function ProfileScreen() {
         />
       )}
 
-      <SettingsModal
-        visible={isSettingsVisible}
-        profile={profile}
-        onClose={() => setIsSettingsVisible(false)}
-        onProfileUpdated={setProfile}
-      />
+      {isOwnProfile && (
+        <SettingsModal
+          visible={isSettingsVisible}
+          profile={profile}
+          onClose={() => setIsSettingsVisible(false)}
+          onProfileUpdated={setProfile}
+        />
+      )}
 
-      <ProfileImageModal
-        visible={isProfileImageModalVisible}
-        onClose={() => setIsProfileImageModalVisible(false)}
-        profile={profile}
-        onImageUpdate={handleUpdateProfileImage}
-      />
+      {isOwnProfile && (
+        <ProfileImageModal
+          visible={isProfileImageModalVisible}
+          onClose={() => setIsProfileImageModalVisible(false)}
+          profile={profile}
+          onImageUpdate={handleUpdateProfileImage}
+        />
+      )}
 
-      <BoostServiceModal
-        visible={isBoostModalVisible}
-        service={serviceToEdit}
-        onClose={() => setIsBoostModalVisible(false)}
-        onBoosted={(updated) => {
-          setServices((prev) =>
-            prev.map((s) => (s.id === updated.id ? updated : s)),
-          );
-          setServiceToEdit((prev) =>
-            prev && prev.id === updated.id
-              ? { ...prev, ...updated }
-              : prev,
-          );
-        }}
-      />
+      {isOwnProfile && (
+        <BoostServiceModal
+          visible={isBoostModalVisible}
+          service={serviceToEdit}
+          onClose={() => setIsBoostModalVisible(false)}
+          onBoosted={(updated) => {
+            setServices((prev) =>
+              prev.map((s) => (s.id === updated.id ? updated : s)),
+            );
+            setServiceToEdit((prev) =>
+              prev && prev.id === updated.id ? { ...prev, ...updated } : prev,
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -825,10 +972,12 @@ const ServiceCard = ({
   service,
   onMorePress,
   onToggleStatus,
+  readonly = false,
 }: {
   service: ServiceWithDetails;
-  onMorePress: () => void;
-  onToggleStatus: () => void;
+  onMorePress?: () => void;
+  onToggleStatus?: () => void;
+  readonly?: boolean;
 }) => (
   <View className="bg-white border border-slate-100 rounded-2xl p-4 mb-3">
     <View className="flex-row items-start justify-between">
@@ -868,12 +1017,14 @@ const ServiceCard = ({
           </Text>
         </View>
       </View>
-      <TouchableOpacity
-        onPress={onMorePress}
-        className="p-2 bg-slate-50 rounded-xl"
-      >
-        <MoreVertical size={18} color={COLORS.slate500} />
-      </TouchableOpacity>
+      {!readonly && onMorePress && (
+        <TouchableOpacity
+          onPress={onMorePress}
+          className="p-2 bg-slate-50 rounded-xl"
+        >
+          <MoreVertical size={18} color={COLORS.slate500} />
+        </TouchableOpacity>
+      )}
     </View>
   </View>
 );
@@ -890,7 +1041,11 @@ const SubscriptionRow = ({
   const p = sub.provider_profile;
   const name = formatDisplayName(p ?? null, "Provider");
   return (
-    <View className="flex-row items-center py-3 border-b border-slate-50">
+    <TouchableOpacity
+      onPress={() => router.push(`/profile/${sub.provider_id}`)}
+      activeOpacity={0.85}
+      className="flex-row items-center py-3 border-b border-slate-50"
+    >
       <View className="w-12 h-12 rounded-xl bg-slate-200 items-center justify-center mr-3">
         <Text className="text-lg font-bold text-slate-500">
           {name[0]?.toUpperCase() ?? "?"}
@@ -921,7 +1076,7 @@ const SubscriptionRow = ({
           Unfollow
         </Text>
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -1013,7 +1168,6 @@ const EditServiceModal = ({
 
   const handleSave = async () => {
     if (!hasChanges) return;
-
     if (
       !validateServiceForm({
         title: form.title,
@@ -1230,7 +1384,6 @@ const SettingsModal = ({
 
   useEffect(() => {
     let mounted = true;
-
     getNotificationPreferences()
       .then((preferences) => {
         if (mounted) setNotificationPreferences(preferences);
@@ -1238,7 +1391,6 @@ const SettingsModal = ({
       .catch((error) => {
         console.error("Error loading notification preferences:", error);
       });
-
     return () => {
       mounted = false;
     };

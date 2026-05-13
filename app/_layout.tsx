@@ -38,6 +38,8 @@ export default function RootLayout() {
             <Stack.Screen name="chat/[conversationId]" />
             {/* Full service list — Top Rated, Nearest, by Category */}
             <Stack.Screen name="services-list/index" />
+            {/* Public provider profile */}
+            <Stack.Screen name="profile/[userId]" />
           </Stack>
         </KeyboardProvider>
       </SafeAreaProvider>

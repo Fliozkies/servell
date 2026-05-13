@@ -1,5 +1,6 @@
 // lib/components/CommentItem.tsx
 import { AntDesign } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { deleteComment, toggleCommentLike } from "../api/comments.api";
@@ -13,25 +14,8 @@ type CommentItemProps = {
   onReply: (comment: CommentWithDetails) => void;
   onUpdate: () => void;
   highlight?: boolean;
-  initiallyExpandReplies?: boolean; // ADD THIS LINE
+  initiallyExpandReplies?: boolean;
 };
-
-/** Returns a consistent muted avatar background from initials */
-// function avatarColor(name: string): string {
-//   const colors = [
-//     "#6366f1",
-//     "#8b5cf6",
-//     "#ec4899",
-//     "#0ea5e9",
-//     "#10b981",
-//     "#f59e0b",
-//     "#ef4444",
-//     "#1877F2",
-//   ];
-//   let hash = 0;
-//   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + hash * 31;
-//   return colors[Math.abs(hash) % colors.length];
-// }
 
 export default function CommentItem({
   comment,
@@ -77,6 +61,13 @@ export default function CommentItem({
     ? `${comment.profile.first_name} ${comment.profile.last_name || ""}`.trim()
     : "Anonymous";
 
+  const authorId = comment.profile?.id ?? comment.user_id;
+
+  const handleAuthorPress = () => {
+    if (!authorId) return;
+    router.push(`/profile/${authorId}`);
+  };
+
   const handleLike = async () => {
     if (!currentUserId) {
       Alert.alert("Login Required", "Please log in to like comments");
@@ -95,7 +86,6 @@ export default function CommentItem({
     try {
       setLiking(true);
       await toggleCommentLike(comment.id);
-      // No onUpdate() — optimistic state already reflects the change
     } catch (error) {
       console.error("Error liking comment:", error);
       // Rollback on error
@@ -137,28 +127,32 @@ export default function CommentItem({
     <View style={[styles.container, highlight && styles.containerHighlight]}>
       {/* ── Comment header ── */}
       <View className="flex-row items-start">
-        <View className="mr-2">
+        {/* Avatar + name tappable to navigate to author's profile */}
+        <TouchableOpacity
+          onPress={handleAuthorPress}
+          activeOpacity={0.7}
+          className="flex-row items-center flex-1 mr-2"
+        >
           <ProfileAvatar profile={comment.profile} size={40} />
-        </View>
-
-        <View className="flex-1">
-          {/* Name + badge row */}
-          <View className="flex-row items-center flex-wrap">
-            <Text className="text-sm font-bold text-slate-900 mr-[1px]">
-              {authorName}
+          <View className="ml-2 flex-1">
+            {/* Name + badge row */}
+            <View className="flex-row items-center flex-wrap">
+              <Text className="text-sm font-bold text-slate-900 mr-[1px]">
+                {authorName}
+              </Text>
+              {comment.is_provider && (
+                <View className="bg-[#1877F2]/10 px-1 py-0.5 rounded-full">
+                  <Text className="text-sm font-bold text-[#1877F2]">
+                    Service Provider
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text className="text-[11px] text-slate-400 mt-0.5">
+              {formatDistanceToNow(comment.created_at)}
             </Text>
-            {comment.is_provider && (
-              <View className="bg-[#1877F2]/10 px-1 py-0.5 rounded-full">
-                <Text className="text-sm font-bold text-[#1877F2]">
-                  Service Provider
-                </Text>
-              </View>
-            )}
           </View>
-          <Text className="text-[11px] text-slate-400 mt-0.5">
-            {formatDistanceToNow(comment.created_at)}
-          </Text>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={handleLike}
@@ -192,10 +186,7 @@ export default function CommentItem({
       </View>
 
       <View className="flex-row mb-2">
-        {/* for offsetting */}
         <View className="mr-13" />
-
-        {/* ── Comment body ── */}
         <Text className="text-sm text-slate-700 mt-2">{comment.content}</Text>
       </View>
 
@@ -235,13 +226,19 @@ export default function CommentItem({
                 ? `${reply.profile.first_name} ${reply.profile.last_name || ""}`.trim()
                 : "Anonymous";
 
+              const replyAuthorId = reply.profile?.id ?? reply.user_id;
+
+              const handleReplyAuthorPress = () => {
+                if (!replyAuthorId) return;
+                router.push(`/profile/${replyAuthorId}`);
+              };
+
               const handleReplyLike = async () => {
                 if (!currentUserId) {
                   Alert.alert("Login Required", "Please log in to like");
                   return;
                 }
 
-                // Snapshot for rollback
                 const prevLiked = reply.user_has_liked;
                 const prevCount = reply.like_count;
 
@@ -262,7 +259,6 @@ export default function CommentItem({
 
                 try {
                   await toggleCommentLike(reply.id);
-                  // No onUpdate() — optimistic state already reflects the change
                 } catch (error) {
                   console.error("Error liking reply:", error);
                   // Rollback
@@ -284,25 +280,31 @@ export default function CommentItem({
               return (
                 <View key={reply.id} className="mb-3">
                   <View className="flex-row items-start">
-                    <ProfileAvatar profile={reply.profile} size={32} />
-
-                    <View className="ml-2 flex-1">
-                      <View className="flex-row items-center flex-wrap">
-                        <Text className="text-sm font-bold text-slate-900">
-                          {replyAuthorName}
+                    {/* Reply author avatar + name — tappable */}
+                    <TouchableOpacity
+                      onPress={handleReplyAuthorPress}
+                      activeOpacity={0.7}
+                      className="flex-row items-center flex-1"
+                    >
+                      <ProfileAvatar profile={reply.profile} size={32} />
+                      <View className="ml-2 flex-1">
+                        <View className="flex-row items-center flex-wrap">
+                          <Text className="text-sm font-bold text-slate-900">
+                            {replyAuthorName}
+                          </Text>
+                          {reply.is_provider && (
+                            <View className="bg-[#1877F2]/10 px-1 py-1 rounded-full">
+                              <Text className="text-sm font-bold text-[#1877F2]">
+                                Service Provider
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text className="text-[11px] text-slate-400">
+                          {formatDistanceToNow(reply.created_at)}
                         </Text>
-                        {reply.is_provider && (
-                          <View className="bg-[#1877F2]/10 px-1 py-1 rounded-full">
-                            <Text className="text-sm font-bold text-[#1877F2]">
-                              Service Provider
-                            </Text>
-                          </View>
-                        )}
                       </View>
-                      <Text className="text-[11px] text-slate-400">
-                        {formatDistanceToNow(reply.created_at)}
-                      </Text>
-                    </View>
+                    </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={handleReplyLike}
