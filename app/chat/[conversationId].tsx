@@ -33,9 +33,11 @@ import {
   markMessagesAsRead,
   sendMessage,
   subscribeToMessages,
+  createTypingChannel,
 } from "../../lib/api/messaging.api";
 import { supabase } from "../../lib/api/supabase";
 import { CachedImage } from "../../lib/components/ui/CachedImage";
+import { TypingIndicator } from "../../lib/components/ui/TypingIndicator";
 import { CHAT_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
@@ -196,9 +198,12 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const activeCacheKeyRef = useRef<string | null>(cacheKey);
   const inputRef = useRef<TextInput>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendTypingStatusRef = useRef<((isTyping: boolean) => void) | null>(null);
   const insets = useSafeAreaInsets();
 
   const scrollToBottom = useCallback((animated = true) => {
@@ -330,7 +335,27 @@ export default function ChatScreen() {
       loadMessages,
     );
 
-    return unsubscribe;
+    const { sendTypingStatus, unsubscribe: unsubscribeTyping } =
+      createTypingChannel(
+        conversationId,
+        currentUserId,
+        (userId, isTyping) => {
+          setTypingUsers((prev) => {
+            const next = new Set(prev);
+            if (isTyping) next.add(userId);
+            else next.delete(userId);
+            return next;
+          });
+          if (isTyping) scrollToBottom();
+        },
+      );
+
+    sendTypingStatusRef.current = sendTypingStatus;
+
+    return () => {
+      unsubscribe();
+      unsubscribeTyping();
+    };
   }, [
     cacheKey,
     conversationId,
@@ -350,6 +375,9 @@ export default function ChatScreen() {
     const text = messageText.trim();
     if (!text || !currentUserId || !cacheKey) return;
     setMessageText("");
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (sendTypingStatusRef.current) sendTypingStatusRef.current(false);
 
     let finalContent = text;
     if (replyTo) {
@@ -581,6 +609,13 @@ export default function ChatScreen() {
         renderItem={renderMessage}
         contentContainerStyle={styles.messagesList}
         onContentSizeChange={() => scrollToBottom(false)}
+        ListFooterComponent={
+          Array.from(typingUsers).some((id) => id !== currentUserId) ? (
+            <View style={{ paddingLeft: 4 }}>
+              <TypingIndicator />
+            </View>
+          ) : null
+        }
       />
 
       <KeyboardAvoidingView behavior="padding">
@@ -615,7 +650,26 @@ export default function ChatScreen() {
           <TextInput
             ref={inputRef}
             value={messageText}
-            onChangeText={setMessageText}
+            onChangeText={(text) => {
+              setMessageText(text);
+
+              if (sendTypingStatusRef.current) {
+                if (typingTimeoutRef.current) {
+                  clearTimeout(typingTimeoutRef.current);
+                }
+
+                if (text.trim().length === 0) {
+                  sendTypingStatusRef.current(false);
+                } else {
+                  sendTypingStatusRef.current(true);
+                  typingTimeoutRef.current = setTimeout(() => {
+                    if (sendTypingStatusRef.current) {
+                      sendTypingStatusRef.current(false);
+                    }
+                  }, 2000);
+                }
+              }
+            }}
             placeholder="Type a message..."
             placeholderTextColor="#94a3b8"
             style={styles.input}

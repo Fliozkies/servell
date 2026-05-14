@@ -353,3 +353,57 @@ export function subscribeToConversations(
     supabase.removeChannel(channel);
   };
 }
+
+/**
+ * Create a typing channel for a conversation.
+ * Returns a function to send your own typing status, and an unsubscribe function.
+ */
+export function createTypingChannel(
+  conversationId: string,
+  userId: string,
+  onTypingStatusChanged: (userId: string, isTyping: boolean) => void,
+) {
+  void initRealtimeAuth();
+
+  const channel = supabase
+    .channel(`typing:${conversationId}`, {
+      config: {
+        broadcast: { self: false },
+      },
+    })
+    .on("broadcast", { event: "typing" }, (payload) => {
+      if (payload.payload?.userId) {
+        onTypingStatusChanged(
+          payload.payload.userId,
+          !!payload.payload.isTyping,
+        );
+      }
+    })
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR") {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.access_token) {
+            supabase.realtime.setAuth(session.access_token);
+          }
+        });
+      }
+    });
+
+  const sendTypingStatus = async (isTyping: boolean) => {
+    try {
+      await channel.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { userId, isTyping },
+      });
+    } catch (err) {
+      console.warn("[createTypingChannel] Failed to send typing status:", err);
+    }
+  };
+
+  const unsubscribe = () => {
+    supabase.removeChannel(channel);
+  };
+
+  return { sendTypingStatus, unsubscribe };
+}
