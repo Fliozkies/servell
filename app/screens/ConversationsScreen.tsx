@@ -32,6 +32,12 @@ const conversationsCacheMap = new Map<string, ConversationWithDetails[]>();
 function getConversationPreview(msg: ConversationWithDetails["last_message"]) {
   if (!msg) return "No messages yet";
   if (isImageMessage(msg.content)) return "📷 Photo";
+
+  const replyMatch = msg.content.match(/^> Replying to (.*?):\n> (.*?)\n\n([\s\S]*)$/);
+  if (replyMatch) {
+    return replyMatch[3];
+  }
+
   return msg.content;
 }
 
