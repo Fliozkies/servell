@@ -154,7 +154,7 @@ export default function OverviewTab({
           </Text>
           <TouchableOpacity
             onPress={() => {
-              if (!isOwnService) router.push(`/profile/${service.user_id}`);
+              if (!isOwnService) router.push(`/profile/${service.user_id}` as any);
             }}
             activeOpacity={isOwnService ? 1 : 0.7}
             className="flex-row items-center"

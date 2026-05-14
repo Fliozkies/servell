@@ -80,7 +80,6 @@ import {
 import {
   Profile,
   Service,
-  ServiceWithDetails,
   ServiceSubscriptionWithProfile,
   ServiceWithDetails,
 } from "../../lib/types/database.types";
@@ -461,9 +460,9 @@ export default function ProfileScreen({ viewedUserId }: ProfileScreenProps) {
   const avgRating =
     reviewedServices.length > 0
       ? (
-          reviewedServices.reduce((sum, s) => sum + s.rating, 0) /
-          reviewedServices.length
-        ).toFixed(1)
+        reviewedServices.reduce((sum, s) => sum + s.rating, 0) /
+        reviewedServices.length
+      ).toFixed(1)
       : "—";
 
   const profileTabs = isOwnProfile ? OWN_PROFILE_TABS : PUBLIC_PROFILE_TABS;
@@ -561,11 +560,10 @@ export default function ProfileScreen({ viewedUserId }: ProfileScreenProps) {
               onPress={handleSubscribeToggle}
               disabled={subscribing}
               activeOpacity={0.82}
-              className={`mt-4 py-3 rounded-2xl flex-row items-center justify-center ${
-                isSubscribed
+              className={`mt-4 py-3 rounded-2xl flex-row items-center justify-center ${isSubscribed
                   ? "bg-slate-100 border border-slate-200"
                   : "bg-[#1877F2]"
-              }`}
+                }`}
             >
               {subscribing ? (
                 <ActivityIndicator
@@ -826,7 +824,7 @@ export default function ProfileScreen({ viewedUserId }: ProfileScreenProps) {
                   icon={<Zap size={20} color="#7c3aed" />}
                   label={
                     serviceToEdit?.boosted_until &&
-                    new Date(serviceToEdit.boosted_until) > new Date()
+                      new Date(serviceToEdit.boosted_until) > new Date()
                       ? "Manage Boost"
                       : "Boost Service"
                   }
@@ -1041,7 +1039,7 @@ const SubscriptionRow = ({
   const name = formatDisplayName(p ?? null, "Provider");
   return (
     <TouchableOpacity
-      onPress={() => router.push(`/profile/${sub.provider_id}`)}
+      onPress={() => router.push(`/profile/${sub.provider_id}` as any)}
       activeOpacity={0.85}
       className="flex-row items-center py-3 border-b border-slate-50"
     >
@@ -1225,9 +1223,8 @@ const EditServiceModal = ({
           <TouchableOpacity
             onPress={handleSave}
             disabled={saving || !hasChanges}
-            className={`px-4 py-2 rounded-full ${
-              saving || !hasChanges ? "bg-slate-300" : "bg-[#1877F2]"
-            }`}
+            className={`px-4 py-2 rounded-full ${saving || !hasChanges ? "bg-slate-300" : "bg-[#1877F2]"
+              }`}
           >
             {saving ? (
               <ActivityIndicator size="small" color="white" />
@@ -1442,7 +1439,7 @@ const SettingsModal = ({
       Alert.alert(
         "Database Error",
         err?.message ||
-          "Could not save profile. Please make sure the 'bio' column exists in your Supabase 'profiles' table.",
+        "Could not save profile. Please make sure the 'bio' column exists in your Supabase 'profiles' table.",
       );
     } finally {
       setSaving(false);
