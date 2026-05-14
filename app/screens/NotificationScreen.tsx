@@ -142,12 +142,13 @@ export default function NotificationScreen({
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
+    let mounted = true;
 
     async function init() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user || !mounted) return;
       userIdRef.current = user.id;
 
       // Subscribe FIRST — before the async load — so no notification that
@@ -165,7 +166,10 @@ export default function NotificationScreen({
     }
 
     init();
-    return () => unsub?.();
+    return () => {
+      mounted = false;
+      unsub?.();
+    };
   }, [load]);
 
   const handleMarkRead = async (id: string) => {

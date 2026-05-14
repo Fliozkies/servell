@@ -292,6 +292,14 @@ export async function deleteReview(reviewId: string): Promise<void> {
       .eq("user_id", user.id);
 
     if (error) throw error;
+
+    // Clean up associated notification
+    await supabase
+      .from("notifications")
+      .delete()
+      .eq("type", "new_review")
+      .contains("data", { review_id: reviewId });
+
   } catch (error) {
     console.error("Error deleting review:", error);
     throw error;

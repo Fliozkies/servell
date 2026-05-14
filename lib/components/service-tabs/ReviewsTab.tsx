@@ -371,7 +371,7 @@ export default function ReviewsTab({
       <FlatList
         {...VERTICAL_LIST_PROPS}
         ref={flatListRef}
-        data={reviews}
+        data={userReview ? reviews.filter((r) => r.id !== userReview.id) : reviews}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <ReviewItem
