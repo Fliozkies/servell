@@ -12,7 +12,18 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchMessages,
@@ -52,6 +63,99 @@ type ConversationDetails = {
 const messagesCacheMap = new Map<string, LocalMessage[]>();
 const detailsCacheMap = new Map<string, ConversationDetails>();
 
+const SwipeableMessageBubble = React.memo(({ 
+  item, 
+  isOwn, 
+  isFirstInGroup, 
+  onReply, 
+  onRetry 
+}: { 
+  item: LocalMessage; 
+  isOwn: boolean; 
+  isFirstInGroup: boolean; 
+  onReply: (msg: LocalMessage) => void; 
+  onRetry: (msg: LocalMessage) => void; 
+}) => {
+  const translateX = useSharedValue(0);
+  const isImage = isImageMessage(item.content);
+  const imgUrl = isImage ? getImageUrl(item.content) : null;
+  const senderName = item.sender_profile?.first_name || "User";
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .onUpdate((e) => {
+      if (!isOwn) {
+        translateX.value = Math.max(0, Math.min(e.translationX, 80));
+      }
+    })
+    .onEnd((e) => {
+      if (!isOwn && translateX.value > 50) {
+        runOnJS(onReply)(item);
+      }
+      translateX.value = withSpring(0, { damping: 12, stiffness: 90 });
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }]
+  }));
+
+  const iconAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: translateX.value / 50,
+    transform: [{ scale: Math.min(translateX.value / 50, 1) }]
+  }));
+
+  return (
+    <View style={[styles.msgRow, isOwn ? styles.msgRowOwn : styles.msgRowOther, isFirstInGroup && styles.msgFirstInGroup]}>
+      {!isOwn && (
+        <Animated.View style={[styles.replyIconContainer, iconAnimatedStyle]}>
+          <Ionicons name="arrow-undo" size={20} color={COLORS.primary} />
+        </Animated.View>
+      )}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.bubbleWrap, isOwn && styles.bubbleWrapOwn, animatedStyle]}>
+          {!isOwn && isFirstInGroup && (
+            <Text style={styles.senderNameText}>{senderName}</Text>
+          )}
+          {isImage && imgUrl ? (
+            <View style={[styles.imageBubble, isOwn ? styles.imageBubbleOwn : styles.imageBubbleOther, item._status === "failed" && styles.bubbleFailed]}>
+              <CachedImage uri={imgUrl} style={styles.chatImage} />
+              {item._status === "sending" && (
+                <View style={styles.imageLoadingOverlay}>
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther, item._status === "failed" && styles.bubbleFailed]}>
+              <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
+                {item.content}
+              </Text>
+            </View>
+          )}
+
+          <View style={[styles.statusRow, isOwn && styles.statusRowOwn]}>
+            <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
+            {!isOwn && (
+              <TouchableOpacity onPress={() => onReply(item)} style={{marginLeft: 6}}>
+                <Ionicons name="arrow-undo-outline" size={12} color="#94a3b8" />
+              </TouchableOpacity>
+            )}
+            {item._status === "sending" && (
+              <ActivityIndicator size="small" color="#94a3b8" style={styles.statusIcon} />
+            )}
+            {item._status === "failed" && (
+              <TouchableOpacity onPress={() => onRetry(item)} style={styles.retryBtn}>
+                <Ionicons name="refresh" size={14} color="#ef4444" />
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+});
+
 export default function ChatScreen() {
   const { conversationId } = useLocalSearchParams<{
     conversationId: string;
@@ -69,8 +173,10 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [messageText, setMessageText] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const activeCacheKeyRef = useRef<string | null>(cacheKey);
+  const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
 
   const scrollToBottom = useCallback((animated = true) => {
@@ -179,7 +285,7 @@ export default function ChatScreen() {
                 (isImageMessage(m.content) &&
                   Math.abs(
                     new Date(m.created_at).getTime() -
-                      new Date(newMessage.created_at).getTime(),
+                    new Date(newMessage.created_at).getTime(),
                   ) < 5000)),
           );
 
@@ -213,10 +319,25 @@ export default function ChatScreen() {
     scrollToBottom,
   ]);
 
+  const handleReply = useCallback((msg: LocalMessage) => {
+    setReplyTo(msg);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
+
   const handleSend = useCallback(async () => {
     const text = messageText.trim();
     if (!text || !currentUserId || !cacheKey) return;
     setMessageText("");
+
+    let finalContent = text;
+    if (replyTo) {
+      const isReplyFromMe = replyTo.sender_id === currentUserId;
+      const senderName = isReplyFromMe ? "You" : replyTo.sender_profile?.first_name || "User";
+      let previewText = isImageMessage(replyTo.content) ? "📷 Photo" : replyTo.content;
+      if (previewText.length > 50) previewText = previewText.substring(0, 50) + "...";
+      finalContent = `> Replying to ${senderName}:\n> ${previewText}\n\n${text}`;
+    }
+    setReplyTo(null);
 
     const localId = `local_${Date.now()}`;
     const optimistic: LocalMessage = {
@@ -224,7 +345,7 @@ export default function ChatScreen() {
       _localId: localId,
       conversation_id: conversationId,
       sender_id: currentUserId,
-      content: text,
+      content: finalContent,
       is_read: false,
       created_at: new Date().toISOString(),
       _status: "sending",
@@ -240,7 +361,7 @@ export default function ChatScreen() {
     try {
       const sentMessage = await sendMessage({
         conversation_id: conversationId,
-        content: text,
+        content: finalContent,
       });
       setMessages((prev) => {
         const next = prev.map((m) =>
@@ -260,7 +381,7 @@ export default function ChatScreen() {
         return next;
       });
     }
-  }, [cacheKey, conversationId, currentUserId, messageText, scrollToBottom]);
+  }, [cacheKey, conversationId, currentUserId, messageText, replyTo, scrollToBottom]);
 
   const handlePickImage = useCallback(async () => {
     if (!currentUserId || !cacheKey) return;
@@ -374,76 +495,19 @@ export default function ChatScreen() {
     item: LocalMessage;
     index: number;
   }) => {
-    const isOwn = item.sender_id === currentUserId;
-    const isImage = isImageMessage(item.content);
-    const imgUrl = isImage ? getImageUrl(item.content) : null;
     const prevItem = index > 0 ? messages[index - 1] : null;
     const isFirstInGroup = !prevItem || prevItem.sender_id !== item.sender_id;
 
     return (
-      <View
-        style={[
-          styles.msgRow,
-          isOwn ? styles.msgRowOwn : styles.msgRowOther,
-          isFirstInGroup && styles.msgFirstInGroup,
-        ]}
-      >
-        <View style={[styles.bubbleWrap, isOwn && styles.bubbleWrapOwn]}>
-          {isImage && imgUrl ? (
-            <View
-              style={[
-                styles.imageBubble,
-                isOwn ? styles.imageBubbleOwn : styles.imageBubbleOther,
-                item._status === "failed" && styles.bubbleFailed,
-              ]}
-            >
-              <CachedImage
-                uri={imgUrl}
-                style={styles.chatImage}
-              />
-              {item._status === "sending" && (
-                <View style={styles.imageLoadingOverlay}>
-                  <ActivityIndicator size="small" color="#fff" />
-                </View>
-              )}
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.bubble,
-                isOwn ? styles.bubbleOwn : styles.bubbleOther,
-                item._status === "failed" && styles.bubbleFailed,
-              ]}
-            >
-              <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
-                {item.content}
-              </Text>
-            </View>
-          )}
-
-          <View style={[styles.statusRow, isOwn && styles.statusRowOwn]}>
-            <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
-            {item._status === "sending" && (
-              <ActivityIndicator
-                size="small"
-                color="#94a3b8"
-                style={styles.statusIcon}
-              />
-            )}
-            {item._status === "failed" && (
-              <TouchableOpacity
-                onPress={() => handleRetry(item)}
-                style={styles.retryBtn}
-              >
-                <Ionicons name="refresh" size={14} color="#ef4444" />
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </View>
+      <SwipeableMessageBubble
+        item={item}
+        isOwn={item.sender_id === currentUserId}
+        isFirstInGroup={isFirstInGroup}
+        onReply={handleReply}
+        onRetry={handleRetry}
+      />
     );
-  }, [currentUserId, handleRetry, messages]);
+  }, [currentUserId, handleReply, handleRetry, messages]);
 
   const messageKeyExtractor = useCallback(
     (item: LocalMessage, idx: number) => item.id || `msg-${idx}`,
@@ -471,7 +535,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={COLORS.slate900} />
@@ -498,6 +562,21 @@ export default function ChatScreen() {
       />
 
       <KeyboardAvoidingView behavior="padding">
+        {replyTo && (
+          <View style={styles.replyPreviewContainer}>
+            <View style={styles.replyPreviewContent}>
+              <Text style={styles.replyPreviewName}>
+                Replying to {replyTo.sender_id === currentUserId ? "You" : replyTo.sender_profile?.first_name || "User"}
+              </Text>
+              <Text style={styles.replyPreviewText} numberOfLines={1}>
+                {isImageMessage(replyTo.content) ? "📷 Photo" : replyTo.content}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyPreviewClose}>
+              <Ionicons name="close-circle" size={20} color={COLORS.slate400} />
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
           <TouchableOpacity
             onPress={handlePickImage}
@@ -512,6 +591,7 @@ export default function ChatScreen() {
           </TouchableOpacity>
 
           <TextInput
+            ref={inputRef}
             value={messageText}
             onChangeText={setMessageText}
             placeholder="Type a message..."
@@ -537,7 +617,7 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -630,4 +710,45 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sendBtnDisabled: { backgroundColor: "#e2e8f0" },
+  replyIconContainer: {
+    position: 'absolute',
+    left: -35,
+    top: '50%',
+    marginTop: -10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  replyPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  replyPreviewContent: {
+    flex: 1,
+  },
+  replyPreviewName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 2,
+  },
+  replyPreviewText: {
+    fontSize: 13,
+    color: COLORS.slate500,
+  },
+  replyPreviewClose: {
+    padding: 4,
+  },
+  senderNameText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
 });

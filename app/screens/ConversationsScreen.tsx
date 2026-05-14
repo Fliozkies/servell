@@ -49,7 +49,15 @@ const ConversationRow = React.memo(function ConversationRow({
   const otherName = formatDisplayName(otherUser ?? null, "Unknown User");
   const initials = otherName.charAt(0).toUpperCase();
   const hasUnread = (item.unread_count || 0) > 0;
-  const preview = getConversationPreview(item.last_message);
+  let preview = getConversationPreview(item.last_message);
+
+  if (item.last_message && currentUserId) {
+    const isLastMessageFromMe = item.last_message.sender_id === currentUserId;
+    const senderFirstName = isLastMessageFromMe
+      ? "You"
+      : otherUser?.first_name || "User";
+    preview = `${senderFirstName}: ${preview}`;
+  }
 
   return (
     <TouchableOpacity
@@ -225,9 +233,6 @@ export default function ConversationsScreen() {
       <View style={styles.root}>
         <View className="flex-row items-center justify-between bg-white px-5 pb-2 border-b border-slate-100">
           <Text className="text-3xl font-bold text-slate-900">Messages</Text>
-          <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
-            <Ionicons name="refresh" size={20} color={COLORS.slate500} />
-          </TouchableOpacity>
         </View>
 
         {conversations.length === 0 ? (
