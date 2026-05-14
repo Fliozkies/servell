@@ -1,14 +1,9 @@
 // lib/components/ReviewItem.tsx
 import { AntDesign } from "@expo/vector-icons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { router } from "expo-router";
 import React, { useState } from "react";
-import {
-  Alert,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   deleteReview,
   deleteReviewReply,
@@ -60,6 +55,13 @@ export default function ReviewItem({
     ? `${review.profile.first_name} ${review.profile.last_name || ""}`.trim()
     : "Anonymous";
 
+  const authorId = review.profile?.id ?? review.user_id;
+
+  const handleAuthorPress = () => {
+    if (!authorId) return;
+    router.push(`/profile/${authorId}`);
+  };
+
   // Optimistic reaction toggle — updates UI instantly, syncs DB in background
   const handleReaction = async (type: "helpful" | "unhelpful") => {
     if (!currentUserId) {
@@ -103,7 +105,6 @@ export default function ReviewItem({
     try {
       setReacting(true);
       await toggleReviewReaction(review.id, type);
-      // Intentionally no onUpdate() — avoids full list reload
     } catch (error) {
       // Rollback on failure
       setLocalReaction(previousReaction);
@@ -186,15 +187,21 @@ export default function ReviewItem({
 
   return (
     <View style={[styles.container, highlight && styles.containerHighlight]}>
-      {/* Header */}
+      {/* Header — author avatar + name are tappable to view their profile */}
       <View style={styles.header}>
-        <ProfileAvatar profile={review.profile} size={40} />
-        <View style={styles.headerMeta}>
-          <Text style={styles.authorName}>{authorName}</Text>
-          <Text style={styles.timestamp}>
-            {formatDistanceToNow(review.created_at)}
-          </Text>
-        </View>
+        <TouchableOpacity
+          onPress={handleAuthorPress}
+          activeOpacity={0.7}
+          style={styles.authorTouchable}
+        >
+          <ProfileAvatar profile={review.profile} size={40} />
+          <View style={styles.headerMeta}>
+            <Text style={styles.authorName}>{authorName}</Text>
+            <Text style={styles.timestamp}>
+              {formatDistanceToNow(review.created_at)}
+            </Text>
+          </View>
+        </TouchableOpacity>
         {renderStars(review.rating)}
       </View>
 
@@ -340,6 +347,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 8,
+  },
+  // Wraps avatar + name/timestamp to make them jointly tappable
+  authorTouchable: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
   headerMeta: { flex: 1, marginLeft: 10 },
   authorName: { fontSize: 13, fontWeight: "700", color: "#0f172a" },

@@ -17,6 +17,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+package-lock.json
 
 # Metro
 .metro-health-check*
@@ -49,4 +50,6 @@ docx
 .env
 servell_with_maps*
 repomix*
-
+.vscode/.react
+app.jpg
+app.zip

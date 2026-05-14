@@ -198,7 +198,9 @@ const ServiceCard = ({
         >
           {service.title}
         </Text>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}>
+        <Text
+          style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+        >
           {formatPrice(service.price)}
         </Text>
         <Text

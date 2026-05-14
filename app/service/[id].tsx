@@ -3,11 +3,12 @@
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, Image, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Text, TouchableOpacity, View } from "react-native";
 import { supabase } from "../../lib/api/supabase";
 import CommentsTab from "../../lib/components/service-tabs/CommentsTab";
 import OverviewTab from "../../lib/components/service-tabs/OverviewTab";
 import ReviewsTab from "../../lib/components/service-tabs/ReviewsTab";
+import { CachedImage } from "../../lib/components/ui/CachedImage";
 import ServiceDetailSkeleton from "../../lib/components/ui/ServiceDetailSkeleton";
 import { TabBar } from "../../lib/components/ui/TabBar";
 import { COLORS } from "../../lib/constants/theme";
@@ -111,10 +112,9 @@ export default function ServiceDetailScreen() {
 
       {/* Service Image */}
       {service.image_url ? (
-        <Image
-          source={{ uri: service.image_url }}
-          className="w-full h-64"
-          resizeMode="cover"
+        <CachedImage
+          uri={service.image_url}
+          style={{ width: "100%", height: 256 }}
         />
       ) : (
         <View className="w-full h-64 bg-slate-200 items-center justify-center">

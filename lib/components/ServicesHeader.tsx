@@ -32,10 +32,7 @@ export default function ServicesHeader({
 
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         {/* Search button */}
-        <TouchableOpacity
-          onPress={onSearchPress}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity onPress={onSearchPress} activeOpacity={0.7}>
           <View
             style={{
               width: 38,

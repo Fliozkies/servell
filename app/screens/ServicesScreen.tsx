@@ -359,7 +359,9 @@ const MiniCard = ({ service }: { service: ServiceWithDetails }) => {
         >
           {service.title}
         </Text>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}>
+        <Text
+          style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+        >
           {formatPrice(service.price)}
         </Text>
         <Text
@@ -549,7 +551,11 @@ const GridCard = ({ service }: { service: ServiceWithDetails }) => {
         >
           <View>
             <Text
-              style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+              style={{
+                fontSize: 12,
+                fontWeight: "700",
+                color: COLORS.slate700,
+              }}
             >
               {formatPrice(service.price)}
             </Text>
@@ -825,10 +831,7 @@ export default function ServicesScreen({
 
   // "Top rated" — top 6 reviewed services by rating, then review count.
   const topRatedServices = !isFiltered
-    ? [...services]
-        .filter(hasRating)
-        .sort(compareTopRatedServices)
-        .slice(0, 6)
+    ? [...services].filter(hasRating).sort(compareTopRatedServices).slice(0, 6)
     : [];
 
   // ── States ───────────────────────────────────────────────────────────────

@@ -14,7 +14,6 @@ import {
   Alert,
   Animated,
   Dimensions,
-  Image,
   Modal,
   ScrollView,
   Text,
@@ -28,6 +27,7 @@ import {
 } from "../api/services.api";
 import { COLORS } from "../constants/theme";
 import { Service } from "../types/database.types";
+import { CachedImage } from "./ui/CachedImage";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 
@@ -159,8 +159,8 @@ function ServicePickerStep({
             }}
           >
             {service.image_url ? (
-              <Image
-                source={{ uri: service.image_url }}
+              <CachedImage
+                uri={service.image_url}
                 style={{
                   width: 48,
                   height: 48,
@@ -310,7 +310,7 @@ export function BoostServiceModal({
     (force = false) => {
       if (!userId || (cachedServices !== null && !force)) return;
       setServicesLoading(true);
-      fetchUserServices(userId)
+      fetchUserServices(userId, { force })
         .then((data) =>
           setCachedServices(data.filter((s) => s.status !== "deleted")),
         )
@@ -378,6 +378,7 @@ export function BoostServiceModal({
         boost_tier: selectedTier,
         boosted_until: boostedUntil.toISOString(),
       };
+      setSelectedService(updated);
       onBoosted?.(updated);
       // Keep cache in sync after a successful boost
       setCachedServices((prev) =>
@@ -414,7 +415,13 @@ export function BoostServiceModal({
                 boost_tier: null,
                 boosted_until: null,
               };
+              setSelectedService(updated);
               onBoosted?.(updated);
+              setCachedServices((prev) =>
+                prev
+                  ? prev.map((s) => (s.id === updated.id ? updated : s))
+                  : prev,
+              );
               Alert.alert("Boost Cancelled", "Your boost has been removed.", [
                 { text: "OK", onPress: onClose },
               ]);

@@ -101,6 +101,8 @@ function getNotificationsModule(): LocalNotificationsModule | null {
   }
 
   try {
+    // Keep these lazy so Expo Go or stale native builds do not crash at module load.
+    /* eslint-disable @typescript-eslint/no-require-imports */
     const channelManagerTypes = require(
       "expo-notifications/build/NotificationChannelManager.types",
     );
@@ -118,6 +120,7 @@ function getNotificationsModule(): LocalNotificationsModule | null {
     const channel = require(
       "expo-notifications/build/setNotificationChannelAsync",
     );
+    /* eslint-enable @typescript-eslint/no-require-imports */
 
     notificationsModule = {
       AndroidImportance: channelManagerTypes.AndroidImportance,

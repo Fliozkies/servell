@@ -3,27 +3,26 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ArrowLeft, Clock, Trash2, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Dimensions,
   FlatList,
   Image,
+  RefreshControl,
+  ScrollView,
+  Text,
   TextInput,
   TouchableOpacity,
   View,
-  Text,
-  Dimensions,
-  RefreshControl,
-  ScrollView,
 } from "react-native";
 
-import {
-  searchAndFilterServices,
-} from "../../lib/api/services.api";
+import { router } from "expo-router";
+import { searchAndFilterServices } from "../../lib/api/services.api";
 import FilterBottomSheet from "../../lib/components/FilterBottomSheet";
 import { COLORS } from "../../lib/constants/theme";
 import { useDebounce } from "../../lib/hooks/useDebounce";
 import { ServiceWithDetails } from "../../lib/types/database.types";
 import { FilterOptions } from "../../lib/types/filter.types";
 import { formatPrice } from "../../lib/utils/format";
-import { router } from "expo-router";
+
 
 const { width } = Dimensions.get("window");
 const COLUMN_WIDTH = (width - 48) / 2;
@@ -169,7 +168,11 @@ const GridCard = ({ service }: { service: ServiceWithDetails }) => {
         >
           <View>
             <Text
-              style={{ fontSize: 12, fontWeight: "700", color: COLORS.slate700 }}
+              style={{
+                fontSize: 12,
+                fontWeight: "700",
+                color: COLORS.slate700,
+              }}
             >
               {formatPrice(service.price)}
             </Text>
@@ -254,7 +257,9 @@ export default function SearchScreen({
       if (!trimmed) return;
       const updated = [
         trimmed,
-        ...searchHistory.filter((h) => h.toLowerCase() !== trimmed.toLowerCase()),
+        ...searchHistory.filter(
+          (h) => h.toLowerCase() !== trimmed.toLowerCase(),
+        ),
       ].slice(0, MAX_HISTORY_ITEMS);
       setSearchHistory(updated);
       await saveHistory(updated);

@@ -227,16 +227,14 @@ export default function MainScreen() {
         )}
       </View>
 
-      {activeTab !== "Post" &&
-        activeTab !== "Search" &&
-        activeTab !== "Notification" && (
-          <BottomNav
-            currentTab={activeTab}
-            onTabPress={handleTabPress}
-            unreadMessages={counts.messages}
-            unreadNotifications={counts.notifications}
-          />
-        )}
+      {activeTab !== "Post" && activeTab !== "Search" && activeTab !== "Notification" && (
+        <BottomNav
+          currentTab={activeTab}
+          onTabPress={handleTabPress}
+          unreadMessages={counts.messages}
+          unreadNotifications={counts.notifications}
+        />
+      )}
     </SafeAreaView>
   );
 }

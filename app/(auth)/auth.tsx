@@ -268,8 +268,7 @@ export default function AuthScreen() {
     "border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 mb-3 text-slate-900 text-[14px]";
   const PASSWORD_INPUT_CONTAINER_CLASS =
     "flex-row items-center border border-slate-200 bg-slate-50 rounded-xl mb-3";
-  const PASSWORD_INPUT_CLASS =
-    "flex-1 px-4 py-3 text-slate-900 text-[14px]";
+  const PASSWORD_INPUT_CLASS = "flex-1 px-4 py-3 text-slate-900 text-[14px]";
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (

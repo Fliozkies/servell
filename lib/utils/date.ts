@@ -51,14 +51,47 @@ export function formatDistanceToNow(dateString: string): string {
 }
 
 /**
- * Returns HH:MM formatted time string.
- * Used in chat message timestamps.
+ * Returns a context-aware timestamp for chat messages.
+ *
+ * - Same day:    "3:45 PM"
+ * - Yesterday:   "Yesterday 3:45 PM"
+ * - This week:   "Mon 3:45 PM"
+ * - This year:   "Jan 5, 3:45 PM"
+ * - Older:       "Jan 5 2023, 3:45 PM"
  */
 export function formatTime(dateString: string): string {
-  return new Date(dateString).toLocaleTimeString([], {
+  const date = new Date(dateString);
+  const now = new Date();
+
+  const time = date.toLocaleTimeString("en-PH", {
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000);
+  const startOfWeek = new Date(
+    startOfToday.getTime() - startOfToday.getDay() * 86_400_000,
+  );
+
+  if (date >= startOfToday) return time;
+  if (date >= startOfYesterday) return `Yesterday ${time}`;
+  if (date >= startOfWeek) {
+    const day = date.toLocaleDateString("en-PH", { weekday: "short" });
+    return `${day} ${time}`;
+  }
+
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const dateStr = date.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+  return `${dateStr}, ${time}`;
 }
 
 /**

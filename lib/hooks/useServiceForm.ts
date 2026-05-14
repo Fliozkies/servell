@@ -4,7 +4,10 @@ import { fetchCategories } from "../api/services.api";
 import { Category, Service } from "../types/database.types";
 import { PickedImage, pickImage } from "../utils/imageUtils";
 
+export type ServiceType = "digital" | "physical";
+
 export interface ServiceFormState {
+  serviceType: ServiceType;
   title: string;
   description: string;
   price: string;
@@ -16,9 +19,11 @@ export interface ServiceFormState {
   currentTag: string;
   selectedImage: PickedImage | null; // now holds uri + base64 + mimeType
   selectedCategory: string | null;
+  customCategory: string;
 }
 
 export interface ServiceFormActions {
+  setServiceType: (v: ServiceType) => void;
   setTitle: (v: string) => void;
   setDescription: (v: string) => void;
   setPrice: (v: string) => void;
@@ -27,6 +32,7 @@ export interface ServiceFormActions {
   setPhoneNumber: (v: string) => void;
   setCurrentTag: (v: string) => void;
   setSelectedCategory: (v: string | null) => void;
+  setCustomCategory: (v: string) => void;
   handleAddTag: () => void;
   handleRemoveTag: (tag: string) => void;
   handlePickImage: () => Promise<void>;
@@ -37,6 +43,9 @@ export interface ServiceFormActions {
 export function useServiceForm(
   initialService?: Service | null,
 ): ServiceFormState & ServiceFormActions {
+  const [serviceType, setServiceType] = useState<ServiceType>(
+    initialService?.service_type ?? "digital",
+  );
   const [title, setTitle] = useState(initialService?.title ?? "");
   const [description, setDescription] = useState(
     initialService?.description ?? "",
@@ -60,6 +69,7 @@ export function useServiceForm(
   const [selectedCategory, setSelectedCategory] = useState<string | null>(
     initialService?.category_id ?? null,
   );
+  const [customCategory, setCustomCategory] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
@@ -84,6 +94,8 @@ export function useServiceForm(
     setCurrentTag("");
     setSelectedImage(null);
     setSelectedCategory(initialService.category_id ?? null);
+    setCustomCategory("");
+    setServiceType(initialService.service_type ?? "digital");
   }, [initialService]);
 
   const setCoordinates = (lat: number | null, lng: number | null) => {
@@ -115,6 +127,7 @@ export function useServiceForm(
   };
 
   return {
+    serviceType,
     title,
     description,
     price,
@@ -126,6 +139,8 @@ export function useServiceForm(
     currentTag,
     selectedImage,
     selectedCategory,
+    customCategory,
+    setServiceType,
     setTitle,
     setDescription,
     setPrice,
@@ -134,6 +149,7 @@ export function useServiceForm(
     setPhoneNumber,
     setCurrentTag,
     setSelectedCategory,
+    setCustomCategory,
     handleAddTag,
     handleRemoveTag,
     handlePickImage,
@@ -143,6 +159,7 @@ export function useServiceForm(
 }
 
 export function validateServiceForm(fields: {
+  serviceType?: ServiceType;
   title: string;
   description: string;
   location: string;
@@ -157,7 +174,7 @@ export function validateServiceForm(fields: {
     Alert.alert("Required Field", "Please enter a description");
     return false;
   }
-  if (!fields.location.trim()) {
+  if (fields.serviceType !== "digital" && !fields.location.trim()) {
     Alert.alert("Required Field", "Please enter a location");
     return false;
   }

@@ -1,11 +1,28 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import "../global.css";
+import { initRealtimeAuth } from "../lib/api/messaging.api";
+import { supabase } from "../lib/api/supabase";
 import { ErrorBoundary } from "../lib/components/ErrorBoundary";
 
 export default function RootLayout() {
+  useEffect(() => {
+    void initRealtimeAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) {
+        void supabase.realtime.setAuth(session.access_token);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
@@ -21,6 +38,8 @@ export default function RootLayout() {
             <Stack.Screen name="chat/[conversationId]" />
             {/* Full service list — Top Rated, Nearest, by Category */}
             <Stack.Screen name="services-list/index" />
+            {/* Public provider profile */}
+            <Stack.Screen name="profile/[userId]" />
           </Stack>
         </KeyboardProvider>
       </SafeAreaProvider>

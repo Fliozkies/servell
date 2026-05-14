@@ -123,19 +123,22 @@ export default function NotificationScreen({
 
   const userIdRef = useRef<string | null>(null);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const data = await fetchNotifications();
-      setNotifications(data);
-      onUnreadCountChange?.(data.filter((n) => !n.is_read).length);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [onUnreadCountChange]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const data = await fetchNotifications();
+        setNotifications(data);
+        onUnreadCountChange?.(data.filter((n) => !n.is_read).length);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [onUnreadCountChange],
+  );
 
   useEffect(() => {
     let unsub: (() => void) | null = null;

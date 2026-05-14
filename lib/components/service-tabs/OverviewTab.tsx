@@ -1,6 +1,7 @@
 // lib/components/service-tabs/OverviewTab.tsx
-import { AntDesign, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { BadgeCheck } from "lucide-react-native";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -151,22 +152,35 @@ export default function OverviewTab({
           <Text className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
             Service Provider
           </Text>
-          <View className="flex-row items-center">
+          <TouchableOpacity
+            onPress={() => {
+              if (!isOwnService) router.push(`/profile/${service.user_id}`);
+            }}
+            activeOpacity={isOwnService ? 1 : 0.7}
+            className="flex-row items-center"
+          >
             <ProfileAvatar profile={service.profile} size={48} />
             <View className="ml-3 flex-1">
-              <Text className="text-base font-bold text-slate-900">
-                {authorName}
-              </Text>
+              <View className="flex-row items-center">
+                <Text className="text-base font-bold text-slate-900 mr-1">
+                  {authorName}
+                </Text>
+                {service.profile?.physis_verified && (
+                  <BadgeCheck size={16} color="#1877F2" fill="#dbeafe" />
+                )}
+              </View>
               {service.profile?.physis_verified && (
-                <View className="flex-row items-center mt-1">
-                  <MaterialIcons name="verified" size={14} color="#1877F2" />
-                  <Text className="ml-1 text-xs text-slate-600">
-                    Verified Provider
-                  </Text>
-                </View>
+                <Text className="text-xs text-slate-500 mt-0.5">
+                  Verified Provider
+                </Text>
+              )}
+              {!isOwnService && (
+                <Text className="text-xs text-[#1877F2] mt-0.5">
+                  View profile →
+                </Text>
               )}
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* ── Message Button (only for non-owners) ── */}

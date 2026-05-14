@@ -1,24 +1,29 @@
 // app/chat/[conversationId].tsx
-// FIXES: Issues 12, 13, 14
-// - Messages from other users appear immediately (Issue 12)
-// - Chat header shows service provider name instead of generic "Chat" (Issue 13)
-// - Image double-send fixed with better deduplication (Issue 14)
-
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchMessages,
@@ -30,6 +35,8 @@ import {
   subscribeToMessages,
 } from "../../lib/api/messaging.api";
 import { supabase } from "../../lib/api/supabase";
+import { CachedImage } from "../../lib/components/ui/CachedImage";
+import { CHAT_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
 import { MessageWithSender } from "../../lib/types/database.types";
@@ -46,36 +53,140 @@ type ConversationDetails = {
   service_id: string;
   buyer_id: string;
   seller_id: string;
-  service?: {
-    title: string;
-  };
-  buyer?: {
-    first_name: string;
-    last_name: string | null;
-  };
-  seller?: {
-    first_name: string;
-    last_name: string | null;
-  };
+  service?: { title: string };
+  buyer?: { first_name: string; last_name: string | null };
+  seller?: { first_name: string; last_name: string | null };
 };
 
+// Module-level cache keyed by userId + conversationId — survives navigation
+// without reusing another signed-in account's "own message" perspective.
+const messagesCacheMap = new Map<string, LocalMessage[]>();
+const detailsCacheMap = new Map<string, ConversationDetails>();
+
+const SwipeableMessageBubble = React.memo(({ 
+  item, 
+  isOwn, 
+  isFirstInGroup, 
+  onReply, 
+  onRetry 
+}: { 
+  item: LocalMessage; 
+  isOwn: boolean; 
+  isFirstInGroup: boolean; 
+  onReply: (msg: LocalMessage) => void; 
+  onRetry: (msg: LocalMessage) => void; 
+}) => {
+  const translateX = useSharedValue(0);
+  const isImage = isImageMessage(item.content);
+  const imgUrl = isImage ? getImageUrl(item.content) : null;
+  const senderName = item.sender_profile?.first_name || "User";
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .onUpdate((e) => {
+      if (!isOwn) {
+        translateX.value = Math.max(0, Math.min(e.translationX, 80));
+      }
+    })
+    .onEnd((e) => {
+      if (!isOwn && translateX.value > 50) {
+        runOnJS(onReply)(item);
+      }
+      translateX.value = withSpring(0, { damping: 12, stiffness: 90 });
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }]
+  }));
+
+  const iconAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: translateX.value / 50,
+    transform: [{ scale: Math.min(translateX.value / 50, 1) }]
+  }));
+
+  return (
+    <View style={[styles.msgRow, isOwn ? styles.msgRowOwn : styles.msgRowOther, isFirstInGroup && styles.msgFirstInGroup]}>
+      {!isOwn && (
+        <Animated.View style={[styles.replyIconContainer, iconAnimatedStyle]}>
+          <Ionicons name="arrow-undo" size={20} color={COLORS.primary} />
+        </Animated.View>
+      )}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.bubbleWrap, isOwn && styles.bubbleWrapOwn, animatedStyle]}>
+          {!isOwn && isFirstInGroup && (
+            <Text style={styles.senderNameText}>{senderName}</Text>
+          )}
+          {isImage && imgUrl ? (
+            <View style={[styles.imageBubble, isOwn ? styles.imageBubbleOwn : styles.imageBubbleOther, item._status === "failed" && styles.bubbleFailed]}>
+              <CachedImage uri={imgUrl} style={styles.chatImage} />
+              {item._status === "sending" && (
+                <View style={styles.imageLoadingOverlay}>
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther, item._status === "failed" && styles.bubbleFailed]}>
+              <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
+                {item.content}
+              </Text>
+            </View>
+          )}
+
+          <View style={[styles.statusRow, isOwn && styles.statusRowOwn]}>
+            <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
+            {!isOwn && (
+              <TouchableOpacity onPress={() => onReply(item)} style={{marginLeft: 6}}>
+                <Ionicons name="arrow-undo-outline" size={12} color="#94a3b8" />
+              </TouchableOpacity>
+            )}
+            {item._status === "sending" && (
+              <ActivityIndicator size="small" color="#94a3b8" style={styles.statusIcon} />
+            )}
+            {item._status === "failed" && (
+              <TouchableOpacity onPress={() => onRetry(item)} style={styles.retryBtn}>
+                <Ionicons name="refresh" size={14} color="#ef4444" />
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+});
+
 export default function ChatScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  const { conversationId } = useLocalSearchParams<{
+    conversationId: string;
+  }>();
+
   const currentUserId = useCurrentUserId();
+  const cacheKey =
+    currentUserId && conversationId
+      ? `${currentUserId}:${conversationId}`
+      : null;
+
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [conversationDetails, setConversationDetails] =
     useState<ConversationDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [messageText, setMessageText] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const activeCacheKeyRef = useRef<string | null>(cacheKey);
+  const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
 
-  const scrollToBottom = (animated = true) => {
+  const scrollToBottom = useCallback((animated = true) => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 80);
-  };
+  }, []);
 
-  // Fetch conversation details including provider name
+  useEffect(() => {
+    activeCacheKeyRef.current = cacheKey;
+  }, [cacheKey]);
+
   const loadConversationDetails = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -95,23 +206,37 @@ export default function ChatScreen() {
         .single();
 
       if (error) throw error;
-      setConversationDetails(data as unknown as ConversationDetails);
+      if (!cacheKey || activeCacheKeyRef.current !== cacheKey) return;
+      const details = data as unknown as ConversationDetails;
+      detailsCacheMap.set(cacheKey, details);
+      setConversationDetails(details);
     } catch (err) {
       console.error("Error loading conversation details:", err);
     }
-  }, [conversationId]);
+  }, [cacheKey, conversationId]);
 
   const loadMessages = useCallback(async () => {
     try {
+      if (!cacheKey) return;
       const data = await fetchMessages(conversationId);
-      setMessages(data.map((m) => ({ ...m, _status: "sent" })));
-      scrollToBottom(false);
+      const fresh = data.map((m) => ({ ...m, _status: "sent" as const }));
+      if (activeCacheKeyRef.current !== cacheKey) return;
+
+      // Only update if something actually changed — avoids unnecessary re-renders.
+      const cached = messagesCacheMap.get(cacheKey);
+      const lastCachedId = cached?.[cached.length - 1]?.id;
+      const lastFreshId = fresh[fresh.length - 1]?.id;
+      if (fresh.length !== cached?.length || lastFreshId !== lastCachedId) {
+        messagesCacheMap.set(cacheKey, fresh);
+        setMessages(fresh);
+        scrollToBottom(false);
+      }
     } catch (err) {
       console.error("Error loading messages:", err);
     } finally {
-      setLoading(false);
+      if (activeCacheKeyRef.current === cacheKey) setLoading(false);
     }
-  }, [conversationId]);
+  }, [cacheKey, conversationId, scrollToBottom]);
 
   const markAsRead = useCallback(async () => {
     try {
@@ -121,74 +246,98 @@ export default function ChatScreen() {
     }
   }, [conversationId]);
 
-  // Mark messages as read whenever screen is focused (covers back-navigation too)
-  useFocusEffect(
-    useCallback(() => {
-      markAsRead();
-    }, [markAsRead]),
-  );
-
   useEffect(() => {
+    if (!currentUserId || !cacheKey) {
+      setMessages([]);
+      setConversationDetails(null);
+      setLoading(true);
+      return undefined;
+    }
+
+    const hasCachedMessages = messagesCacheMap.has(cacheKey);
+    const cachedMessages = messagesCacheMap.get(cacheKey) ?? [];
+    const cachedDetails = detailsCacheMap.get(cacheKey) ?? null;
+    setMessages(cachedMessages);
+    setConversationDetails(cachedDetails);
+    setLoading(!hasCachedMessages);
+
+    // If we have cached messages, scroll to bottom immediately.
+    if (cachedMessages.length > 0) scrollToBottom(false);
+
+    // Always kick off a background sync + detail fetch.
     loadConversationDetails();
     loadMessages();
     markAsRead();
 
-    // FIX Issue 12 & 14: Improved subscription with better deduplication
-    const unsubscribe = subscribeToMessages(conversationId, (newMessage) => {
-      setMessages((prev) => {
-        // Check if message already exists by ID
-        const existsByServerId = prev.some((m) => m.id === newMessage.id);
-        if (existsByServerId) {
-          return prev;
-        }
+    const unsubscribe = subscribeToMessages(
+      conversationId,
+      (newMessage) => {
+        setMessages((prev) => {
+          const existsByServerId = prev.some((m) => m.id === newMessage.id);
+          if (existsByServerId) return prev;
 
-        // FIX Issue 14: Better matching for optimistic updates
-        // Find local message that matches this server message
-        const localIdx = prev.findIndex(
-          (m) =>
-            m._status === "sending" &&
-            m.sender_id === newMessage.sender_id &&
-            // For text messages, match by content
-            ((!isImageMessage(m.content) && m.content === newMessage.content) ||
-              // For images, match by similar timestamps (within 5 seconds)
-              (isImageMessage(m.content) &&
-                Math.abs(
-                  new Date(m.created_at).getTime() -
+          const localIdx = prev.findIndex(
+            (m) =>
+              m._status === "sending" &&
+              m.sender_id === newMessage.sender_id &&
+              ((!isImageMessage(m.content) &&
+                m.content === newMessage.content) ||
+                (isImageMessage(m.content) &&
+                  Math.abs(
+                    new Date(m.created_at).getTime() -
                     new Date(newMessage.created_at).getTime(),
-                ) < 5000)),
-        );
+                  ) < 5000)),
+          );
 
-        if (localIdx !== -1) {
-          // Replace optimistic message with server message
-          const updated = [...prev];
-          updated[localIdx] = { ...newMessage, _status: "sent" };
-          return updated;
-        }
+          let next: LocalMessage[];
+          if (localIdx !== -1) {
+            next = [...prev];
+            next[localIdx] = { ...newMessage, _status: "sent" };
+          } else {
+            next = [...prev, { ...newMessage, _status: "sent" }];
+          }
 
-        // FIX Issue 12: New message from other user - add immediately
-        return [...prev, { ...newMessage, _status: "sent" }];
-      });
+          // Keep cache in sync with realtime updates too.
+          messagesCacheMap.set(cacheKey, next);
+          return next;
+        });
 
-      // Only mark as read if message is from other user
-      if (newMessage.sender_id !== currentUserId) {
-        markAsRead();
-      }
-      scrollToBottom();
-    });
+        if (newMessage.sender_id !== currentUserId) markAsRead();
+        scrollToBottom();
+      },
+      loadMessages,
+    );
 
     return unsubscribe;
   }, [
+    cacheKey,
     conversationId,
+    currentUserId,
     loadConversationDetails,
     loadMessages,
     markAsRead,
-    currentUserId,
+    scrollToBottom,
   ]);
 
-  const handleSend = async () => {
+  const handleReply = useCallback((msg: LocalMessage) => {
+    setReplyTo(msg);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
+
+  const handleSend = useCallback(async () => {
     const text = messageText.trim();
-    if (!text || !currentUserId) return;
+    if (!text || !currentUserId || !cacheKey) return;
     setMessageText("");
+
+    let finalContent = text;
+    if (replyTo) {
+      const isReplyFromMe = replyTo.sender_id === currentUserId;
+      const senderName = isReplyFromMe ? "You" : replyTo.sender_profile?.first_name || "User";
+      let previewText = isImageMessage(replyTo.content) ? "📷 Photo" : replyTo.content;
+      if (previewText.length > 50) previewText = previewText.substring(0, 50) + "...";
+      finalContent = `> Replying to ${senderName}:\n> ${previewText}\n\n${text}`;
+    }
+    setReplyTo(null);
 
     const localId = `local_${Date.now()}`;
     const optimistic: LocalMessage = {
@@ -196,27 +345,46 @@ export default function ChatScreen() {
       _localId: localId,
       conversation_id: conversationId,
       sender_id: currentUserId,
-      content: text,
+      content: finalContent,
       is_read: false,
       created_at: new Date().toISOString(),
       _status: "sending",
     };
 
-    setMessages((prev) => [...prev, optimistic]);
+    setMessages((prev) => {
+      const next = [...prev, optimistic];
+      messagesCacheMap.set(cacheKey, next);
+      return next;
+    });
     scrollToBottom();
 
     try {
-      await sendMessage({ conversation_id: conversationId, content: text });
+      const sentMessage = await sendMessage({
+        conversation_id: conversationId,
+        content: finalContent,
+      });
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId
+            ? { ...sentMessage, _status: "sent" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === localId ? { ...m, _status: "failed" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId ? { ...m, _status: "failed" as const } : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     }
-  };
+  }, [cacheKey, conversationId, currentUserId, messageText, replyTo, scrollToBottom]);
 
-  const handlePickImage = async () => {
+  const handlePickImage = useCallback(async () => {
+    if (!currentUserId || !cacheKey) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.8,
@@ -232,14 +400,18 @@ export default function ChatScreen() {
       id: localId,
       _localId: localId,
       conversation_id: conversationId,
-      sender_id: currentUserId!,
+      sender_id: currentUserId,
       content: `${IMAGE_MESSAGE_PREFIX}${asset.uri}`,
       is_read: false,
       created_at: new Date().toISOString(),
       _status: "sending",
     };
 
-    setMessages((prev) => [...prev, optimistic]);
+    setMessages((prev) => {
+      const next = [...prev, optimistic];
+      messagesCacheMap.set(cacheKey, next);
+      return next;
+    });
     scrollToBottom();
     setUploadingImage(true);
 
@@ -251,137 +423,106 @@ export default function ChatScreen() {
       };
       const publicUrl = await uploadImage(pickedImage, "chat-images");
       const content = `${IMAGE_MESSAGE_PREFIX}${publicUrl}`;
-      await sendMessage({ conversation_id: conversationId, content });
+      const sentMessage = await sendMessage({
+        conversation_id: conversationId,
+        content,
+      });
 
-      // Update local message with final URL
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === localId ? { ...m, content, _status: "sent" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId
+            ? { ...sentMessage, _status: "sent" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === localId ? { ...m, _status: "failed" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === localId ? { ...m, _status: "failed" as const } : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } finally {
       setUploadingImage(false);
     }
-  };
+  }, [cacheKey, conversationId, currentUserId, scrollToBottom]);
 
-  const handleRetry = async (msg: LocalMessage) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m._localId === msg._localId ? { ...m, _status: "sending" } : m,
-      ),
-    );
+  const handleRetry = useCallback(async (msg: LocalMessage) => {
+    if (!cacheKey) return;
+    setMessages((prev) => {
+      const next = prev.map((m) =>
+        m._localId === msg._localId
+          ? { ...m, _status: "sending" as const }
+          : m,
+      );
+      messagesCacheMap.set(cacheKey, next);
+      return next;
+    });
     try {
-      await sendMessage({
+      const sentMessage = await sendMessage({
         conversation_id: conversationId,
         content: msg.content,
       });
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === msg._localId
+            ? { ...sentMessage, _status: "sent" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._localId === msg._localId ? { ...m, _status: "failed" } : m,
-        ),
-      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === msg._localId
+            ? { ...m, _status: "failed" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
     }
-  };
+  }, [cacheKey, conversationId]);
 
-  const renderMessage = ({
+  const renderMessage = useCallback(({
     item,
     index,
   }: {
     item: LocalMessage;
     index: number;
   }) => {
-    const isOwn = item.sender_id === currentUserId;
-    const isImage = isImageMessage(item.content);
-    const imgUrl = isImage ? getImageUrl(item.content) : null;
     const prevItem = index > 0 ? messages[index - 1] : null;
     const isFirstInGroup = !prevItem || prevItem.sender_id !== item.sender_id;
 
     return (
-      <View
-        style={[
-          styles.msgRow,
-          isOwn ? styles.msgRowOwn : styles.msgRowOther,
-          isFirstInGroup && styles.msgFirstInGroup,
-        ]}
-      >
-        <View style={[styles.bubbleWrap, isOwn && styles.bubbleWrapOwn]}>
-          {isImage && imgUrl ? (
-            <View
-              style={[
-                styles.imageBubble,
-                isOwn ? styles.imageBubbleOwn : styles.imageBubbleOther,
-                item._status === "failed" && styles.bubbleFailed,
-              ]}
-            >
-              <Image
-                source={{ uri: imgUrl }}
-                style={styles.chatImage}
-                resizeMode="cover"
-              />
-              {item._status === "sending" && (
-                <View style={styles.imageLoadingOverlay}>
-                  <ActivityIndicator size="small" color="#fff" />
-                </View>
-              )}
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.bubble,
-                isOwn ? styles.bubbleOwn : styles.bubbleOther,
-                item._status === "failed" && styles.bubbleFailed,
-              ]}
-            >
-              <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
-                {item.content}
-              </Text>
-            </View>
-          )}
-
-          <View style={[styles.statusRow, isOwn && styles.statusRowOwn]}>
-            <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
-            {item._status === "sending" && (
-              <ActivityIndicator
-                size="small"
-                color="#94a3b8"
-                style={styles.statusIcon}
-              />
-            )}
-            {item._status === "failed" && (
-              <TouchableOpacity
-                onPress={() => handleRetry(item)}
-                style={styles.retryBtn}
-              >
-                <Ionicons name="refresh" size={14} color="#ef4444" />
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </View>
+      <SwipeableMessageBubble
+        item={item}
+        isOwn={item.sender_id === currentUserId}
+        isFirstInGroup={isFirstInGroup}
+        onReply={handleReply}
+        onRetry={handleRetry}
+      />
     );
-  };
+  }, [currentUserId, handleReply, handleRetry, messages]);
 
-  // FIX Issue 13: Display provider name in header
+  const messageKeyExtractor = useCallback(
+    (item: LocalMessage, idx: number) => item.id || `msg-${idx}`,
+    [],
+  );
+
   const getHeaderTitle = () => {
     if (!conversationDetails) return "Chat";
-
     const otherUser =
       conversationDetails.seller_id === currentUserId
         ? conversationDetails.buyer
         : conversationDetails.seller;
-
     if (otherUser?.first_name) {
       return `${otherUser.first_name} ${otherUser.last_name || ""}`.trim();
     }
-
     return conversationDetails.service?.title || "Chat";
   };
 
@@ -394,8 +535,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Header with provider name */}
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={COLORS.slate900} />
@@ -411,18 +551,32 @@ export default function ChatScreen() {
         <View style={styles.headerRight} />
       </View>
 
-      {/* Messages */}
       <FlatList
+        {...CHAT_LIST_PROPS}
         ref={flatListRef}
         data={messages}
-        keyExtractor={(item, idx) => item.id || `msg-${idx}`}
+        keyExtractor={messageKeyExtractor}
         renderItem={renderMessage}
         contentContainerStyle={styles.messagesList}
         onContentSizeChange={() => scrollToBottom(false)}
       />
 
-      {/* Input */}
       <KeyboardAvoidingView behavior="padding">
+        {replyTo && (
+          <View style={styles.replyPreviewContainer}>
+            <View style={styles.replyPreviewContent}>
+              <Text style={styles.replyPreviewName}>
+                Replying to {replyTo.sender_id === currentUserId ? "You" : replyTo.sender_profile?.first_name || "User"}
+              </Text>
+              <Text style={styles.replyPreviewText} numberOfLines={1}>
+                {isImageMessage(replyTo.content) ? "📷 Photo" : replyTo.content}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyPreviewClose}>
+              <Ionicons name="close-circle" size={20} color={COLORS.slate400} />
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={[styles.inputContainer, { paddingBottom: insets.bottom }]}>
           <TouchableOpacity
             onPress={handlePickImage}
@@ -437,6 +591,7 @@ export default function ChatScreen() {
           </TouchableOpacity>
 
           <TextInput
+            ref={inputRef}
             value={messageText}
             onChangeText={setMessageText}
             placeholder="Type a message..."
@@ -462,7 +617,7 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -486,89 +641,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
-  backBtn: {
-    padding: 4,
-  },
-  headerCenter: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  headerRight: {
-    width: 32,
-  },
-  messagesList: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  msgRow: {
-    marginBottom: 4,
-  },
-  msgRowOwn: {
-    alignItems: "flex-end",
-  },
-  msgRowOther: {
-    alignItems: "flex-start",
-  },
-  msgFirstInGroup: {
-    marginTop: 12,
-  },
-  bubbleWrap: {
-    maxWidth: "75%",
-  },
-  bubbleWrapOwn: {
-    alignItems: "flex-end",
-  },
-  bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-  },
-  bubbleOwn: {
-    backgroundColor: "#3b82f6",
-    borderBottomRightRadius: 4,
-  },
-  bubbleOther: {
-    backgroundColor: "#fff",
-    borderBottomLeftRadius: 4,
-  },
-  bubbleFailed: {
-    opacity: 0.6,
-    borderWidth: 1,
-    borderColor: "#ef4444",
-  },
-  bubbleText: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: "#0f172a",
-  },
-  bubbleTextOwn: {
-    color: "#fff",
-  },
-  imageBubble: {
-    borderRadius: 12,
-    overflow: "hidden",
-    position: "relative",
-  },
-  imageBubbleOwn: {
-    borderBottomRightRadius: 4,
-  },
-  imageBubbleOther: {
-    borderBottomLeftRadius: 4,
-  },
-  chatImage: {
-    width: 200,
-    height: 200,
-  },
+  backBtn: { padding: 4 },
+  headerCenter: { flex: 1, marginLeft: 12 },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
+  headerSubtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
+  headerRight: { width: 32 },
+  messagesList: { paddingHorizontal: 16, paddingVertical: 12 },
+  msgRow: { marginBottom: 4 },
+  msgRowOwn: { alignItems: "flex-end" },
+  msgRowOther: { alignItems: "flex-start" },
+  msgFirstInGroup: { marginTop: 12 },
+  bubbleWrap: { maxWidth: "75%" },
+  bubbleWrapOwn: { alignItems: "flex-end" },
+  bubble: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
+  bubbleOwn: { backgroundColor: "#3b82f6", borderBottomRightRadius: 4 },
+  bubbleOther: { backgroundColor: "#fff", borderBottomLeftRadius: 4 },
+  bubbleFailed: { opacity: 0.6, borderWidth: 1, borderColor: "#ef4444" },
+  bubbleText: { fontSize: 15, lineHeight: 20, color: "#0f172a" },
+  bubbleTextOwn: { color: "#fff" },
+  imageBubble: { borderRadius: 12, overflow: "hidden", position: "relative" },
+  imageBubbleOwn: { borderBottomRightRadius: 4 },
+  imageBubbleOther: { borderBottomLeftRadius: 4 },
+  chatImage: { width: 200, height: 200 },
   imageLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.3)",
@@ -581,26 +675,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     gap: 6,
   },
-  statusRowOwn: {
-    justifyContent: "flex-end",
-  },
-  timeText: {
-    fontSize: 11,
-    color: "#94a3b8",
-  },
-  statusIcon: {
-    marginLeft: 4,
-  },
-  retryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  retryText: {
-    fontSize: 11,
-    color: "#ef4444",
-    fontWeight: "600",
-  },
+  statusRowOwn: { justifyContent: "flex-end" },
+  timeText: { fontSize: 11, color: "#94a3b8" },
+  statusIcon: { marginLeft: 4 },
+  retryBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  retryText: { fontSize: 11, color: "#ef4444", fontWeight: "600" },
   inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -611,9 +690,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#e2e8f0",
     gap: 8,
   },
-  attachBtn: {
-    padding: 8,
-  },
+  attachBtn: { padding: 8 },
   input: {
     flex: 1,
     backgroundColor: "#f8fafc",
@@ -632,7 +709,46 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  sendBtnDisabled: {
-    backgroundColor: "#e2e8f0",
+  sendBtnDisabled: { backgroundColor: "#e2e8f0" },
+  replyIconContainer: {
+    position: 'absolute',
+    left: -35,
+    top: '50%',
+    marginTop: -10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  replyPreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  replyPreviewContent: {
+    flex: 1,
+  },
+  replyPreviewName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 2,
+  },
+  replyPreviewText: {
+    fontSize: 13,
+    color: COLORS.slate500,
+  },
+  replyPreviewClose: {
+    padding: 4,
+  },
+  senderNameText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.primary,
+    marginBottom: 4,
   },
 });

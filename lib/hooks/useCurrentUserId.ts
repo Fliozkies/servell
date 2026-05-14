@@ -12,9 +12,27 @@ export function useCurrentUserId(): string | null {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUserId(user?.id ?? null);
+    let active = true;
+    let authEventVersion = 0;
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      authEventVersion += 1;
+      if (active) setUserId(session?.user.id ?? null);
     });
+
+    const sessionRequestVersion = authEventVersion;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (active && authEventVersion === sessionRequestVersion) {
+        setUserId(session?.user.id ?? null);
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   return userId;

@@ -38,6 +38,7 @@ export type Service = {
   latitude: number | null;
   longitude: number | null;
   phone_number: string | null;
+  service_type: "digital" | "physical";
   rating: number;
   review_count: number;
   status: "active" | "inactive" | "deleted";
@@ -81,6 +82,7 @@ export type CreateServiceInput = {
   latitude?: number | null;
   longitude?: number | null;
   phone_number?: string;
+  service_type?: "digital" | "physical";
 };
 
 // Input type for updating a service
