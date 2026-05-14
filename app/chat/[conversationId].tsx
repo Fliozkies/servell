@@ -81,6 +81,19 @@ const SwipeableMessageBubble = React.memo(({
   const imgUrl = isImage ? getImageUrl(item.content) : null;
   const senderName = item.sender_profile?.first_name || "User";
 
+  let replySenderName = null;
+  let replyText = null;
+  let actualMessage = item.content;
+
+  if (!isImage) {
+    const replyMatch = item.content.match(/^> Replying to (.*?):\n> (.*?)\n\n([\s\S]*)$/);
+    if (replyMatch) {
+      replySenderName = replyMatch[1];
+      replyText = replyMatch[2];
+      actualMessage = replyMatch[3];
+    }
+  }
+
   const panGesture = Gesture.Pan()
     .activeOffsetX([-10, 10])
     .onUpdate((e) => {
@@ -127,8 +140,17 @@ const SwipeableMessageBubble = React.memo(({
             </View>
           ) : (
             <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther, item._status === "failed" && styles.bubbleFailed]}>
-              <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
-                {item.content}
+              {replySenderName && replyText && (
+                <View style={[styles.inBubbleReplyBlock, isOwn ? styles.inBubbleReplyBlockOwn : styles.inBubbleReplyBlockOther]}>
+                  <View style={styles.inBubbleReplyHeader}>
+                    <Ionicons name="arrow-undo" size={12} color={isOwn ? '#fff' : COLORS.primary} style={{ marginRight: 4, opacity: 0.9 }} />
+                    <Text style={[styles.inBubbleReplyName, isOwn ? styles.inBubbleReplyNameOwn : styles.inBubbleReplyNameOther]} numberOfLines={1}>Replying to {replySenderName}</Text>
+                  </View>
+                  <Text style={[styles.inBubbleReplyText, isOwn ? styles.inBubbleReplyTextOwn : styles.inBubbleReplyTextOther]} numberOfLines={2}>{replyText}</Text>
+                </View>
+              )}
+              <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn, replySenderName ? { marginTop: 4 } : {}]}>
+                {actualMessage}
               </Text>
             </View>
           )}
@@ -750,5 +772,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.primary,
     marginBottom: 4,
+  },
+  inBubbleReplyBlock: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+    borderLeftWidth: 4,
+  },
+  inBubbleReplyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  inBubbleReplyBlockOwn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderLeftColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  inBubbleReplyBlockOther: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderLeftColor: COLORS.primary,
+  },
+  inBubbleReplyName: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  inBubbleReplyNameOwn: {
+    color: '#fff',
+  },
+  inBubbleReplyNameOther: {
+    color: COLORS.primary,
+  },
+  inBubbleReplyText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  inBubbleReplyTextOwn: {
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  inBubbleReplyTextOther: {
+    color: COLORS.slate600,
   },
 });
