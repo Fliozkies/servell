@@ -11,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import MapView, { Callout, Marker, Region } from "react-native-maps";
 import { searchAndFilterServices } from "../../lib/api/services.api";
@@ -19,6 +20,7 @@ import { COLORS } from "../../lib/constants/theme";
 import { useDebounce } from "../../lib/hooks/useDebounce";
 import { ServiceWithDetails } from "../../lib/types/database.types";
 import { FilterOptions } from "../../lib/types/filter.types";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Hides all Google POI markers, transit icons, and business labels
 const CLEAN_MAP_STYLE = [
@@ -57,11 +59,23 @@ const DIGOS_REGION: Region = {
 // How far (meters) the user must move before we update their marker.
 // 30m is fine-grained enough to feel live without hammering the GPS.
 const LOCATION_UPDATE_DISTANCE_M = 30;
+const RECENTER_BUTTON_SIZE = 48;
+const FLOATING_CONTROL_GAP = 16;
 
 type MapScreenProps = {
   filters: FilterOptions;
   onFiltersChange: (filters: FilterOptions) => void;
 };
+
+function useBottomNavClearance() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const scale = Math.min(Math.max(width / 390, 0.85), 1.25);
+  const bottomMargin = Math.max(insets.bottom + Math.round(16 * scale), 24);
+  const navHeight = Math.round(74 * scale);
+
+  return bottomMargin + navHeight + FLOATING_CONTROL_GAP;
+}
 
 export default function MapScreen({
   filters,
@@ -84,6 +98,7 @@ export default function MapScreen({
   const [centeredOnUser, setCenteredOnUser] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 400);
+  const bottomNavClearance = useBottomNavClearance();
 
   const hasActiveFilters =
     filters.categoryId !== null ||
@@ -216,13 +231,18 @@ export default function MapScreen({
       }
 
       mapRef.current?.fitToCoordinates(coordinates, {
-        edgePadding: { top: 150, right: 60, bottom: 120, left: 60 },
+        edgePadding: {
+          top: 150,
+          right: 60,
+          bottom: bottomNavClearance + 130,
+          left: 60,
+        },
         animated: true,
       });
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [services, shouldFitFilteredResults]);
+  }, [bottomNavClearance, services, shouldFitFilteredResults]);
 
   // ── Recenter button ──────────────────────────────────────────────────────
   const handleRecenter = () => {
@@ -373,7 +393,11 @@ export default function MapScreen({
 
       {/* ── Recenter button ── */}
       <TouchableOpacity
-        style={[styles.recenterBtn, centeredOnUser && styles.recenterBtnActive]}
+        style={[
+          styles.recenterBtn,
+          { bottom: bottomNavClearance },
+          centeredOnUser && styles.recenterBtnActive,
+        ]}
         onPress={handleRecenter}
         activeOpacity={0.8}
       >
@@ -386,7 +410,12 @@ export default function MapScreen({
 
       {/* ── No location warning ── */}
       {locationError && (
-        <View style={styles.locationWarning}>
+        <View
+          style={[
+            styles.locationWarning,
+            { bottom: bottomNavClearance + RECENTER_BUTTON_SIZE + 12 },
+          ]}
+        >
           <Ionicons name="warning-outline" size={14} color="#b45309" />
           <Text style={styles.locationWarningText}>
             Location permission denied — live tracking unavailable
@@ -396,7 +425,12 @@ export default function MapScreen({
 
       {/* ── Empty state overlay ── */}
       {services.length === 0 && !loading && (
-        <View style={styles.emptyOverlay}>
+        <View
+          style={[
+            styles.emptyOverlay,
+            { paddingBottom: bottomNavClearance + 24 },
+          ]}
+        >
           <View style={styles.emptyCard}>
             <Ionicons name="map-outline" size={32} color={COLORS.slate400} />
             <Text style={styles.emptyTitle}>
@@ -612,6 +646,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 25,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -628,7 +663,6 @@ const styles = StyleSheet.create({
   // Location warning
   locationWarning: {
     position: "absolute",
-    bottom: 84,
     left: 16,
     right: 72,
     flexDirection: "row",
@@ -651,7 +685,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "flex-end",
-    paddingBottom: 90,
     pointerEvents: "none",
   },
   emptyCard: {
