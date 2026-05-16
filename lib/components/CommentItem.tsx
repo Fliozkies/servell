@@ -65,7 +65,7 @@ export default function CommentItem({
 
   const handleAuthorPress = () => {
     if (!authorId) return;
-    router.push(`/profile/${authorId}`);
+    router.push(`/profile/${authorId}` as any);
   };
 
   const handleLike = async () => {
@@ -230,7 +230,7 @@ export default function CommentItem({
 
               const handleReplyAuthorPress = () => {
                 if (!replyAuthorId) return;
-                router.push(`/profile/${replyAuthorId}`);
+                router.push(`/profile/${replyAuthorId}` as any);
               };
 
               const handleReplyLike = async () => {

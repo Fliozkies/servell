@@ -32,6 +32,14 @@ const conversationsCacheMap = new Map<string, ConversationWithDetails[]>();
 function getConversationPreview(msg: ConversationWithDetails["last_message"]) {
   if (!msg) return "No messages yet";
   if (isImageMessage(msg.content)) return "📷 Photo";
+
+  const replyMatch = msg.content.match(
+    /^> Replying to (.*?):\n> (.*?)\n\n([\s\S]*)$/,
+  );
+  if (replyMatch) {
+    return replyMatch[3];
+  }
+
   return msg.content;
 }
 
@@ -277,14 +285,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.slate50 },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
   loaderText: { marginTop: 12, color: COLORS.slate500, fontSize: 14 },
-  refreshBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.slate100,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   separator: { height: 1, backgroundColor: COLORS.slate100, marginLeft: 76 },
   row: {
     flexDirection: "row",

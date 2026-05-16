@@ -26,6 +26,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  createTypingChannel,
   fetchMessages,
   getImageUrl,
   IMAGE_MESSAGE_PREFIX,
@@ -36,6 +37,7 @@ import {
 } from "../../lib/api/messaging.api";
 import { supabase } from "../../lib/api/supabase";
 import { CachedImage } from "../../lib/components/ui/CachedImage";
+import { TypingIndicator } from "../../lib/components/ui/TypingIndicator";
 import { CHAT_LIST_PROPS } from "../../lib/constants/performance";
 import { COLORS } from "../../lib/constants/theme";
 import { useCurrentUserId } from "../../lib/hooks/useCurrentUserId";
@@ -63,98 +65,201 @@ type ConversationDetails = {
 const messagesCacheMap = new Map<string, LocalMessage[]>();
 const detailsCacheMap = new Map<string, ConversationDetails>();
 
-const SwipeableMessageBubble = React.memo(({ 
-  item, 
-  isOwn, 
-  isFirstInGroup, 
-  onReply, 
-  onRetry 
-}: { 
-  item: LocalMessage; 
-  isOwn: boolean; 
-  isFirstInGroup: boolean; 
-  onReply: (msg: LocalMessage) => void; 
-  onRetry: (msg: LocalMessage) => void; 
-}) => {
-  const translateX = useSharedValue(0);
-  const isImage = isImageMessage(item.content);
-  const imgUrl = isImage ? getImageUrl(item.content) : null;
-  const senderName = item.sender_profile?.first_name || "User";
+const SwipeableMessageBubble = React.memo(
+  ({
+    item,
+    isOwn,
+    isFirstInGroup,
+    onReply,
+    onRetry,
+  }: {
+    item: LocalMessage;
+    isOwn: boolean;
+    isFirstInGroup: boolean;
+    onReply: (msg: LocalMessage) => void;
+    onRetry: (msg: LocalMessage) => void;
+  }) => {
+    const translateX = useSharedValue(0);
+    const isImage = isImageMessage(item.content);
+    const imgUrl = isImage ? getImageUrl(item.content) : null;
+    const senderName = item.sender_profile?.first_name || "User";
 
-  const panGesture = Gesture.Pan()
-    .activeOffsetX([-10, 10])
-    .onUpdate((e) => {
-      if (!isOwn) {
-        translateX.value = Math.max(0, Math.min(e.translationX, 80));
+    let replySenderName = null;
+    let replyText = null;
+    let actualMessage = item.content;
+
+    if (!isImage) {
+      const replyMatch = item.content.match(
+        /^> Replying to (.*?):\n> (.*?)\n\n([\s\S]*)$/,
+      );
+      if (replyMatch) {
+        replySenderName = replyMatch[1];
+        replyText = replyMatch[2];
+        actualMessage = replyMatch[3];
       }
-    })
-    .onEnd((e) => {
-      if (!isOwn && translateX.value > 50) {
-        runOnJS(onReply)(item);
-      }
-      translateX.value = withSpring(0, { damping: 12, stiffness: 90 });
-    });
+    }
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }]
-  }));
+    const panGesture = Gesture.Pan()
+      .activeOffsetX([-10, 10])
+      .onUpdate((e) => {
+        if (!isOwn) {
+          translateX.value = Math.max(0, Math.min(e.translationX, 80));
+        }
+      })
+      .onEnd((e) => {
+        if (!isOwn && translateX.value > 50) {
+          runOnJS(onReply)(item);
+        }
+        translateX.value = withSpring(0, { damping: 12, stiffness: 90 });
+      });
 
-  const iconAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: translateX.value / 50,
-    transform: [{ scale: Math.min(translateX.value / 50, 1) }]
-  }));
+    const animatedStyle = useAnimatedStyle(() => ({
+      transform: [{ translateX: translateX.value }],
+    }));
 
-  return (
-    <View style={[styles.msgRow, isOwn ? styles.msgRowOwn : styles.msgRowOther, isFirstInGroup && styles.msgFirstInGroup]}>
-      {!isOwn && (
-        <Animated.View style={[styles.replyIconContainer, iconAnimatedStyle]}>
-          <Ionicons name="arrow-undo" size={20} color={COLORS.primary} />
-        </Animated.View>
-      )}
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.bubbleWrap, isOwn && styles.bubbleWrapOwn, animatedStyle]}>
-          {!isOwn && isFirstInGroup && (
-            <Text style={styles.senderNameText}>{senderName}</Text>
-          )}
-          {isImage && imgUrl ? (
-            <View style={[styles.imageBubble, isOwn ? styles.imageBubbleOwn : styles.imageBubbleOther, item._status === "failed" && styles.bubbleFailed]}>
-              <CachedImage uri={imgUrl} style={styles.chatImage} />
+    const iconAnimatedStyle = useAnimatedStyle(() => ({
+      opacity: translateX.value / 50,
+      transform: [{ scale: Math.min(translateX.value / 50, 1) }],
+    }));
+
+    return (
+      <View
+        style={[
+          styles.msgRow,
+          isOwn ? styles.msgRowOwn : styles.msgRowOther,
+          isFirstInGroup && styles.msgFirstInGroup,
+        ]}
+      >
+        {!isOwn && (
+          <Animated.View style={[styles.replyIconContainer, iconAnimatedStyle]}>
+            <Ionicons name="arrow-undo" size={20} color={COLORS.primary} />
+          </Animated.View>
+        )}
+        <GestureDetector gesture={panGesture}>
+          <Animated.View
+            style={[
+              styles.bubbleWrap,
+              isOwn && styles.bubbleWrapOwn,
+              animatedStyle,
+            ]}
+          >
+            {!isOwn && isFirstInGroup && (
+              <Text style={styles.senderNameText}>{senderName}</Text>
+            )}
+            {isImage && imgUrl ? (
+              <View
+                style={[
+                  styles.imageBubble,
+                  isOwn ? styles.imageBubbleOwn : styles.imageBubbleOther,
+                  item._status === "failed" && styles.bubbleFailed,
+                ]}
+              >
+                <CachedImage uri={imgUrl} style={styles.chatImage} />
+                {item._status === "sending" && (
+                  <View style={styles.imageLoadingOverlay}>
+                    <ActivityIndicator size="small" color="#fff" />
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View
+                style={[
+                  styles.bubble,
+                  isOwn ? styles.bubbleOwn : styles.bubbleOther,
+                  item._status === "failed" && styles.bubbleFailed,
+                ]}
+              >
+                {replySenderName && replyText && (
+                  <View
+                    style={[
+                      styles.inBubbleReplyBlock,
+                      isOwn
+                        ? styles.inBubbleReplyBlockOwn
+                        : styles.inBubbleReplyBlockOther,
+                    ]}
+                  >
+                    <View style={styles.inBubbleReplyHeader}>
+                      <Ionicons
+                        name="arrow-undo"
+                        size={12}
+                        color={isOwn ? "#fff" : COLORS.primary}
+                        style={{ marginRight: 4, opacity: 0.9 }}
+                      />
+                      <Text
+                        style={[
+                          styles.inBubbleReplyName,
+                          isOwn
+                            ? styles.inBubbleReplyNameOwn
+                            : styles.inBubbleReplyNameOther,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        Replying to {replySenderName}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.inBubbleReplyText,
+                        isOwn
+                          ? styles.inBubbleReplyTextOwn
+                          : styles.inBubbleReplyTextOther,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {replyText}
+                    </Text>
+                  </View>
+                )}
+                <Text
+                  style={[
+                    styles.bubbleText,
+                    isOwn && styles.bubbleTextOwn,
+                    replySenderName ? { marginTop: 4 } : {},
+                  ]}
+                >
+                  {actualMessage}
+                </Text>
+              </View>
+            )}
+
+            <View style={[styles.statusRow, isOwn && styles.statusRowOwn]}>
+              <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
+              {!isOwn && (
+                <TouchableOpacity
+                  onPress={() => onReply(item)}
+                  style={{ marginLeft: 6 }}
+                >
+                  <Ionicons
+                    name="arrow-undo-outline"
+                    size={12}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              )}
               {item._status === "sending" && (
-                <View style={styles.imageLoadingOverlay}>
-                  <ActivityIndicator size="small" color="#fff" />
-                </View>
+                <ActivityIndicator
+                  size="small"
+                  color="#94a3b8"
+                  style={styles.statusIcon}
+                />
+              )}
+              {item._status === "failed" && (
+                <TouchableOpacity
+                  onPress={() => onRetry(item)}
+                  style={styles.retryBtn}
+                >
+                  <Ionicons name="refresh" size={14} color="#ef4444" />
+                  <Text style={styles.retryText}>Retry</Text>
+                </TouchableOpacity>
               )}
             </View>
-          ) : (
-            <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther, item._status === "failed" && styles.bubbleFailed]}>
-              <Text style={[styles.bubbleText, isOwn && styles.bubbleTextOwn]}>
-                {item.content}
-              </Text>
-            </View>
-          )}
-
-          <View style={[styles.statusRow, isOwn && styles.statusRowOwn]}>
-            <Text style={styles.timeText}>{formatTime(item.created_at)}</Text>
-            {!isOwn && (
-              <TouchableOpacity onPress={() => onReply(item)} style={{marginLeft: 6}}>
-                <Ionicons name="arrow-undo-outline" size={12} color="#94a3b8" />
-              </TouchableOpacity>
-            )}
-            {item._status === "sending" && (
-              <ActivityIndicator size="small" color="#94a3b8" style={styles.statusIcon} />
-            )}
-            {item._status === "failed" && (
-              <TouchableOpacity onPress={() => onRetry(item)} style={styles.retryBtn}>
-                <Ionicons name="refresh" size={14} color="#ef4444" />
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </Animated.View>
-      </GestureDetector>
-    </View>
-  );
-});
+          </Animated.View>
+        </GestureDetector>
+      </View>
+    );
+  },
+);
+SwipeableMessageBubble.displayName = "SwipeableMessageBubble";
 
 export default function ChatScreen() {
   const { conversationId } = useLocalSearchParams<{
@@ -174,9 +279,14 @@ export default function ChatScreen() {
   const [messageText, setMessageText] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const activeCacheKeyRef = useRef<string | null>(cacheKey);
   const inputRef = useRef<TextInput>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendTypingStatusRef = useRef<((isTyping: boolean) => void) | null>(
+    null,
+  );
   const insets = useSafeAreaInsets();
 
   const scrollToBottom = useCallback((animated = true) => {
@@ -285,7 +395,7 @@ export default function ChatScreen() {
                 (isImageMessage(m.content) &&
                   Math.abs(
                     new Date(m.created_at).getTime() -
-                    new Date(newMessage.created_at).getTime(),
+                      new Date(newMessage.created_at).getTime(),
                   ) < 5000)),
           );
 
@@ -308,7 +418,23 @@ export default function ChatScreen() {
       loadMessages,
     );
 
-    return unsubscribe;
+    const { sendTypingStatus, unsubscribe: unsubscribeTyping } =
+      createTypingChannel(conversationId, currentUserId, (userId, isTyping) => {
+        setTypingUsers((prev) => {
+          const next = new Set(prev);
+          if (isTyping) next.add(userId);
+          else next.delete(userId);
+          return next;
+        });
+        if (isTyping) scrollToBottom();
+      });
+
+    sendTypingStatusRef.current = sendTypingStatus;
+
+    return () => {
+      unsubscribe();
+      unsubscribeTyping();
+    };
   }, [
     cacheKey,
     conversationId,
@@ -329,12 +455,20 @@ export default function ChatScreen() {
     if (!text || !currentUserId || !cacheKey) return;
     setMessageText("");
 
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (sendTypingStatusRef.current) sendTypingStatusRef.current(false);
+
     let finalContent = text;
     if (replyTo) {
       const isReplyFromMe = replyTo.sender_id === currentUserId;
-      const senderName = isReplyFromMe ? "You" : replyTo.sender_profile?.first_name || "User";
-      let previewText = isImageMessage(replyTo.content) ? "📷 Photo" : replyTo.content;
-      if (previewText.length > 50) previewText = previewText.substring(0, 50) + "...";
+      const senderName = isReplyFromMe
+        ? "You"
+        : replyTo.sender_profile?.first_name || "User";
+      let previewText = isImageMessage(replyTo.content)
+        ? "📷 Photo"
+        : replyTo.content;
+      if (previewText.length > 50)
+        previewText = previewText.substring(0, 50) + "...";
       finalContent = `> Replying to ${senderName}:\n> ${previewText}\n\n${text}`;
     }
     setReplyTo(null);
@@ -381,7 +515,14 @@ export default function ChatScreen() {
         return next;
       });
     }
-  }, [cacheKey, conversationId, currentUserId, messageText, replyTo, scrollToBottom]);
+  }, [
+    cacheKey,
+    conversationId,
+    currentUserId,
+    messageText,
+    replyTo,
+    scrollToBottom,
+  ]);
 
   const handlePickImage = useCallback(async () => {
     if (!currentUserId || !cacheKey) return;
@@ -450,64 +591,64 @@ export default function ChatScreen() {
     }
   }, [cacheKey, conversationId, currentUserId, scrollToBottom]);
 
-  const handleRetry = useCallback(async (msg: LocalMessage) => {
-    if (!cacheKey) return;
-    setMessages((prev) => {
-      const next = prev.map((m) =>
-        m._localId === msg._localId
-          ? { ...m, _status: "sending" as const }
-          : m,
+  const handleRetry = useCallback(
+    async (msg: LocalMessage) => {
+      if (!cacheKey) return;
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m._localId === msg._localId
+            ? { ...m, _status: "sending" as const }
+            : m,
+        );
+        messagesCacheMap.set(cacheKey, next);
+        return next;
+      });
+      try {
+        const sentMessage = await sendMessage({
+          conversation_id: conversationId,
+          content: msg.content,
+        });
+        setMessages((prev) => {
+          const next = prev.map((m) =>
+            m._localId === msg._localId
+              ? { ...sentMessage, _status: "sent" as const }
+              : m,
+          );
+          messagesCacheMap.set(cacheKey, next);
+          return next;
+        });
+      } catch {
+        setMessages((prev) => {
+          const next = prev.map((m) =>
+            m._localId === msg._localId
+              ? { ...m, _status: "failed" as const }
+              : m,
+          );
+          messagesCacheMap.set(cacheKey, next);
+          return next;
+        });
+      }
+    },
+    [cacheKey, conversationId],
+  );
+
+  const renderMessage = useCallback(
+    ({ item, index }: { item: LocalMessage; index: number }) => {
+      const prevItem = index > 0 ? messages[index - 1] : null;
+      const isFirstInGroup = !prevItem || prevItem.sender_id !== item.sender_id;
+
+      return (
+        <SwipeableMessageBubble
+          item={item}
+          isOwn={item.sender_id === currentUserId}
+          isFirstInGroup={isFirstInGroup}
+          onReply={handleReply}
+          onRetry={handleRetry}
+        />
       );
-      messagesCacheMap.set(cacheKey, next);
-      return next;
-    });
-    try {
-      const sentMessage = await sendMessage({
-        conversation_id: conversationId,
-        content: msg.content,
-      });
-      setMessages((prev) => {
-        const next = prev.map((m) =>
-          m._localId === msg._localId
-            ? { ...sentMessage, _status: "sent" as const }
-            : m,
-        );
-        messagesCacheMap.set(cacheKey, next);
-        return next;
-      });
-    } catch {
-      setMessages((prev) => {
-        const next = prev.map((m) =>
-          m._localId === msg._localId
-            ? { ...m, _status: "failed" as const }
-            : m,
-        );
-        messagesCacheMap.set(cacheKey, next);
-        return next;
-      });
-    }
-  }, [cacheKey, conversationId]);
-
-  const renderMessage = useCallback(({
-    item,
-    index,
-  }: {
-    item: LocalMessage;
-    index: number;
-  }) => {
-    const prevItem = index > 0 ? messages[index - 1] : null;
-    const isFirstInGroup = !prevItem || prevItem.sender_id !== item.sender_id;
-
-    return (
-      <SwipeableMessageBubble
-        item={item}
-        isOwn={item.sender_id === currentUserId}
-        isFirstInGroup={isFirstInGroup}
-        onReply={handleReply}
-        onRetry={handleRetry}
-      />
-    );
-  }, [currentUserId, handleReply, handleRetry, messages]);
+    },
+    [currentUserId, handleReply, handleRetry, messages],
+  );
 
   const messageKeyExtractor = useCallback(
     (item: LocalMessage, idx: number) => item.id || `msg-${idx}`,
@@ -559,6 +700,13 @@ export default function ChatScreen() {
         renderItem={renderMessage}
         contentContainerStyle={styles.messagesList}
         onContentSizeChange={() => scrollToBottom(false)}
+        ListFooterComponent={
+          Array.from(typingUsers).some((id) => id !== currentUserId) ? (
+            <View style={{ paddingLeft: 4 }}>
+              <TypingIndicator />
+            </View>
+          ) : null
+        }
       />
 
       <KeyboardAvoidingView behavior="padding">
@@ -566,13 +714,19 @@ export default function ChatScreen() {
           <View style={styles.replyPreviewContainer}>
             <View style={styles.replyPreviewContent}>
               <Text style={styles.replyPreviewName}>
-                Replying to {replyTo.sender_id === currentUserId ? "You" : replyTo.sender_profile?.first_name || "User"}
+                Replying to{" "}
+                {replyTo.sender_id === currentUserId
+                  ? "You"
+                  : replyTo.sender_profile?.first_name || "User"}
               </Text>
               <Text style={styles.replyPreviewText} numberOfLines={1}>
                 {isImageMessage(replyTo.content) ? "📷 Photo" : replyTo.content}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyPreviewClose}>
+            <TouchableOpacity
+              onPress={() => setReplyTo(null)}
+              style={styles.replyPreviewClose}
+            >
               <Ionicons name="close-circle" size={20} color={COLORS.slate400} />
             </TouchableOpacity>
           </View>
@@ -593,7 +747,26 @@ export default function ChatScreen() {
           <TextInput
             ref={inputRef}
             value={messageText}
-            onChangeText={setMessageText}
+            onChangeText={(text) => {
+              setMessageText(text);
+
+              if (sendTypingStatusRef.current) {
+                if (typingTimeoutRef.current) {
+                  clearTimeout(typingTimeoutRef.current);
+                }
+
+                if (text.trim().length === 0) {
+                  sendTypingStatusRef.current(false);
+                } else {
+                  sendTypingStatusRef.current(true);
+                  typingTimeoutRef.current = setTimeout(() => {
+                    if (sendTypingStatusRef.current) {
+                      sendTypingStatusRef.current(false);
+                    }
+                  }, 2000);
+                }
+              }
+            }}
             placeholder="Type a message..."
             placeholderTextColor="#94a3b8"
             style={styles.input}
@@ -711,21 +884,21 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: "#e2e8f0" },
   replyIconContainer: {
-    position: 'absolute',
+    position: "absolute",
     left: -35,
-    top: '50%',
+    top: "50%",
     marginTop: -10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   replyPreviewContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f1f5f9',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f1f5f9",
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: "#e2e8f0",
     borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
   },
@@ -734,7 +907,7 @@ const styles = StyleSheet.create({
   },
   replyPreviewName: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
     color: COLORS.primary,
     marginBottom: 2,
   },
@@ -747,8 +920,48 @@ const styles = StyleSheet.create({
   },
   senderNameText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
     color: COLORS.primary,
     marginBottom: 4,
+  },
+  inBubbleReplyBlock: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginBottom: 6,
+    borderLeftWidth: 4,
+  },
+  inBubbleReplyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  inBubbleReplyBlockOwn: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderLeftColor: "rgba(255, 255, 255, 0.9)",
+  },
+  inBubbleReplyBlockOther: {
+    backgroundColor: "rgba(0, 0, 0, 0.05)",
+    borderLeftColor: COLORS.primary,
+  },
+  inBubbleReplyName: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  inBubbleReplyNameOwn: {
+    color: "#fff",
+  },
+  inBubbleReplyNameOther: {
+    color: COLORS.primary,
+  },
+  inBubbleReplyText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  inBubbleReplyTextOwn: {
+    color: "rgba(255, 255, 255, 0.9)",
+  },
+  inBubbleReplyTextOther: {
+    color: COLORS.slate600,
   },
 });

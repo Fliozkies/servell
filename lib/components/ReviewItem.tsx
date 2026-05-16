@@ -59,7 +59,7 @@ export default function ReviewItem({
 
   const handleAuthorPress = () => {
     if (!authorId) return;
-    router.push(`/profile/${authorId}`);
+    router.push(`/profile/${authorId}` as any);
   };
 
   // Optimistic reaction toggle — updates UI instantly, syncs DB in background

@@ -153,7 +153,6 @@ export default function ProfileScreen({ viewedUserId }: ProfileScreenProps) {
   // ── Subscribe state (public profile only) ─────────────────────────────────
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
-
   const actionSheetSlide = useRef(new Animated.Value(0)).current;
   const actionSheetBackdrop = useRef(new Animated.Value(0)).current;
 
@@ -244,7 +243,6 @@ export default function ProfileScreen({ viewedUserId }: ProfileScreenProps) {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
-
   const handleTabPress = useCallback(
     (tab: ProfileTab) => {
       if (tab === activeTab) return;
@@ -1042,7 +1040,7 @@ const SubscriptionRow = ({
   const name = formatDisplayName(p ?? null, "Provider");
   return (
     <TouchableOpacity
-      onPress={() => router.push(`/profile/${sub.provider_id}`)}
+      onPress={() => router.push(`/profile/${sub.provider_id}` as any)}
       activeOpacity={0.85}
       className="flex-row items-center py-3 border-b border-slate-50"
     >
@@ -1168,6 +1166,7 @@ const EditServiceModal = ({
 
   const handleSave = async () => {
     if (!hasChanges) return;
+
     if (
       !validateServiceForm({
         title: form.title,
@@ -1384,6 +1383,7 @@ const SettingsModal = ({
 
   useEffect(() => {
     let mounted = true;
+
     getNotificationPreferences()
       .then((preferences) => {
         if (mounted) setNotificationPreferences(preferences);
@@ -1391,6 +1391,7 @@ const SettingsModal = ({
       .catch((error) => {
         console.error("Error loading notification preferences:", error);
       });
+
     return () => {
       mounted = false;
     };
